@@ -122,7 +122,7 @@ const generateCommandCallback = (
     // if the specified ID does not exist, and true if the execution is successful.
     const res: boolean = await (app as UnsafeApp).commands.executeCommandById(commandId);
     if (!res) {
-      new Notice(`Failed to execute command: ${commandName} (${commandId})`);
+      new Notice(`执行命令失败：${commandName} (${commandId})`);
     }
   };
 
@@ -132,14 +132,14 @@ const generateCommandCallback = (
         const cancel = await cancelExecute(
           app,
           `${action.name}`,
-          `Execute command: ${commandName} (${commandId})`,
+          `执行命令：${commandName} (${commandId})`,
         );
         if (cancel) {
           return;
         }
         await basicCallback();
       } catch (error) {
-        loggerOnError(error, "Failed to execute command.\n(About Blank)");
+        loggerOnError(error, "命令执行失败\n(About Blank)");
       }
     };
   } else {
@@ -147,7 +147,7 @@ const generateCommandCallback = (
       try {
         await basicCallback();
       } catch (error) {
-        loggerOnError(error, "Failed to execute command.\n(About Blank)");
+        loggerOnError(error, "命令执行失败\n(About Blank)");
       }
     };
   }
@@ -163,7 +163,7 @@ const generateFileCallback = (
   const basicCallback = async (): Promise<void> => {
     // Prevent creating a new file.
     if (!app.vault.getFiles().map((file) => file.path).includes(normalizedPath)) {
-      new Notice(`File not found: ${fileName} (${normalizedPath})`);
+      new Notice(`文件未找到：${fileName} (${normalizedPath})`);
       return;
     }
     await app.workspace.openLinkText("", normalizedPath);
@@ -175,14 +175,14 @@ const generateFileCallback = (
         const cancel = await cancelExecute(
           app,
           `${action.name}`,
-          `Open file: ${fileName} (${normalizedPath})`,
+          `打开文件：${fileName} (${normalizedPath})`,
         );
         if (cancel) {
           return;
         }
         await basicCallback();
       } catch (error) {
-        loggerOnError(error, "Failed to open file.\n(About Blank)");
+        loggerOnError(error, "文件打开失败\n(About Blank)");
       }
     };
   } else {
@@ -190,7 +190,7 @@ const generateFileCallback = (
       try {
         await basicCallback();
       } catch (error) {
-        loggerOnError(error, "Failed to open file.\n(About Blank)");
+        loggerOnError(error, "文件打开失败\n(About Blank)");
       }
     };
   }

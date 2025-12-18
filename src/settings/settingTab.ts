@@ -147,8 +147,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         this.plugin.settings,
         true,
         null,
-        "Actions",
-        "These actions can be added to the empty file view (new tab).",
+        "操作",
+        "这些操作可以添加到空文件视图（新标签页）中。",
       );
       makeSettingsActionsList(
         this.containerEl,
@@ -165,9 +165,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
   private makeSettingsAddActions = (): void => {
     new Setting(this.containerEl)
-      .setName("Add actions to the empty file view (new tab)")
+      .setName("向空文件视图（新标签页）添加操作")
       .setDesc(
-        "If enabled, the \"Actions\" will be added to the empty file view (new tab). After changing this setting, require to reload Obsidian.",
+        "如果启用，\"操作\"将被添加到空文件视图（新标签页）中。更改此设置后，需要重新加载 Obsidian。",
       )
       .addToggle((toggle) => {
         toggle
@@ -181,7 +181,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 editStyles.rewriteCssVars.emptyStateDisplay.default();
               }
               await this.plugin.saveSettings();
-              new Notice("Reload Obsidian to apply changes", 0);
+              new Notice("重新加载 Obsidian 以应用更改", 0);
               this.display();
             } catch (error) {
               loggerOnError(error, "Error in settings.\n(About Blank)");
@@ -193,24 +193,24 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsQuickActions = (): void => {
     const settingItem = new Setting(this.containerEl);
     settingItem
-      .setName("Quick actions")
+      .setName("快速操作")
       .setDesc(
-        "Actions to be added to the empty file view (new tab) are compiled into suggesters and registered as commands in Obsidian.",
+        "将要添加到空文件视图（新标签页）的操作编译为建议器，并在 Obsidian 中注册为命令。",
       );
     if (this.plugin.settings.quickActions === true) {
       settingItem
         .addExtraButton((button) => {
           button
             .setIcon(this.plugin.settings.quickActionsIcon)
-            .setTooltip("Set icon")
+            .setTooltip("设置图标")
             .onClick(async () => {
               try {
-                const noIconId = "*No icon*";
+                const noIconId = "*无图标*";
                 const iconIds = getIconIds();
                 iconIds.unshift(noIconId);
                 const placeholder = this.plugin.settings.quickActionsIcon
                   ? this.plugin.settings.quickActionsIcon
-                  : "Icon...";
+                  : "图标...";
                 const response = await new IconSuggesterAsync(
                   this.app,
                   iconIds,
@@ -258,10 +258,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsAppearance = (): void => {
     new Setting(this.containerEl)
       .setHeading()
-      .setName("Appearance")
+      .setName("外观设置")
       .addExtraButton((button) => {
         const icon = this.showAppearanceSettings ? "chevron-down" : "chevron-left";
-        const tooltip = this.showAppearanceSettings ? "Hide" : "Show";
+        const tooltip = this.showAppearanceSettings ? "隐藏" : "显示";
         button
           .setIcon(icon)
           .setTooltip(tooltip)
@@ -284,11 +284,11 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
       const limit = DEFAULT_SETTINGS_LIMIT.iconTextGap;
       new Setting(this.containerEl)
-        .setName("Icon-text gap")
+        .setName("图标文本间距")
         .setDesc(
-          `The gap between the icon and text of the action buttons in the empty file view (new tab). Some community themes may require adjusting this value (e.g. Border theme recommends 0px). <${
+          `空文件视图（新标签页）中操作按钮的图标与文本之间的间距。某些社区主题可能需要调整此值（例如 Border 主题推荐 0px）。<${
             limit?.min ?? ""
-          }px - ${limit?.max ?? ""}px (default: ${DEFAULT_SETTINGS.iconTextGap}px)>`,
+          }px - ${limit?.max ?? ""}px (默认: ${DEFAULT_SETTINGS.iconTextGap}px)>`,
         )
         .addSlider((slider) => {
           if (!limit || !Number.isFinite(limit.min) || !Number.isFinite(limit.max) || limit.min >= limit.max) {
@@ -314,9 +314,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         });
 
       new Setting(this.containerEl)
-        .setName("Center actions vertically")
+        .setName("垂直居中操作")
         .setDesc(
-          "If enabled, the actions in the empty file view (new tab) will be centered vertically. This may not work well with some community themes.",
+          "如果启用，空文件视图（新标签页）中的操作将垂直居中。这可能与某些社区主题不太兼容。",
         )
         .addToggle((toggle) => {
           toggle
@@ -338,9 +338,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         });
 
       new Setting(this.containerEl)
-        .setName("Delete actions margin-top (more centered)")
+        .setName("删除操作上边距（更加居中）")
         .setDesc(
-          "If enabled, the margin-top of the actions in the empty file view (new tab) will be deleted. When used in combination with the \"Center actions vertically\" setting, it will be centered more.",
+          "如果启用，空文件视图（新标签页）中操作的上边距将被删除。与\"垂直居中操作\"设置结合使用时，会更加居中。",
         )
         .addToggle((toggle) => {
           toggle
@@ -367,16 +367,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     const settingItem = new Setting(this.containerEl);
     settingItem
       .setHeading()
-      .setName("Clean up settings");
+      .setName("清理设置");
     if (this.showCleanUpSettings) {
       settingItem
         .setDesc(
-          "It checks the settings data, type or value, duplicate command IDs, etc., and initializes any abnormal parts. Details of the changes are output to the console. These changes are not actually saved unless triggered. They can be discarded by reloading Obsidian.",
+          "检查设置数据、类型或值、重复的命令 ID 等，并初始化任何异常部分。更改的详细信息将输出到控制台。除非触发，否则这些更改实际上不会保存。可以通过重新加载 Obsidian 来放弃这些更改。",
         )
         .addButton((button) => {
           button
             .setWarning()
-            .setButtonText("Clean up")
+            .setButtonText("清理")
             .onClick(() => {
               try {
                 this.plugin.cleanUpSettings();

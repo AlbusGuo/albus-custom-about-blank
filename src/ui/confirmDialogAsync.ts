@@ -12,8 +12,8 @@ import {
 try {
   const response = await new ConfirmDialogAsync(
     this.app,
-    "Execute command",
-    "Are you sure you want to execute the command?",
+    "执行命令",
+    "您确定要执行此命令吗？",
   ).setOkCancel().openAndRespond();
   if (!response.result) {
     return;
@@ -159,7 +159,7 @@ export class ConfirmDialogAsync extends Modal {
   setOk = () => {
     this.setButtons(
       {
-        text: "OK",
+        text: "确定",
         cta: true,
       },
       null,
@@ -170,10 +170,10 @@ export class ConfirmDialogAsync extends Modal {
   setOkCancel = () => {
     this.setButtons(
       {
-        text: "OK",
+        text: "确定",
         cta: true,
       },
-      "Cancel",
+      "取消",
     );
     return this;
   };
@@ -181,10 +181,10 @@ export class ConfirmDialogAsync extends Modal {
   setYesNo = () => {
     this.setButtons(
       {
-        text: "Yes",
+        text: "是",
         cta: true,
       },
-      "No",
+      "否",
     );
     return this;
   };
@@ -192,10 +192,10 @@ export class ConfirmDialogAsync extends Modal {
   setDeleteCancel = () => {
     this.setButtons(
       {
-        text: "Delete",
+        text: "删除",
         warn: true,
       },
-      "Cancel",
+      "取消",
     );
     return this;
   };

@@ -15,7 +15,7 @@ import {
 
 try {
   const iconIds = getIconIds();
-  const response = await new IconSuggesterAsync(this.app, iconIds, "Icon...").openAndRespond();
+  const response = await new IconSuggesterAsync(this.app, iconIds, "图标...").openAndRespond();
   if (response.aborted) {
     return;
   }

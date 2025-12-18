@@ -43,9 +43,9 @@ export const ACTION_KINDS = {
 export const ACTION_KINDS_NAME: {
   [key in ValuesOf<typeof ACTION_KINDS>]: string;
 } = {
-  command: "Command",
-  file: "File",
-  group: "Group",
+  command: "命令",
+  file: "文件",
+  group: "分组",
 } as const;
 
 export const ACTION_KINDS_ICON: {

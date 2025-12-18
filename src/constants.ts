@@ -3,7 +3,7 @@ export const LOOP_MAX = 100;
 export const COMMANDS = {
   quickActions: {
     id: "quick-actions",
-    name: "Quick actions",
+    name: "快速操作",
   },
 } as const;
 

@@ -204,7 +204,7 @@ export const makeSettingsActionsHeader = (
     .addExtraButton((button) => {
       button
         .setIcon("plus")
-        .setTooltip("Create")
+        .setTooltip("创建")
         .onClick(async () => {
           try {
             const newAction = await createNewAction(
@@ -294,7 +294,7 @@ export const makeSettingsActionsList = (
       .addExtraButton((button) => {
         button
           .setIcon("arrow-up")
-          .setTooltip("Up")
+          .setTooltip("上移")
           .onClick(async () => {
             try {
               actionsHolder.actions = moveAction(
@@ -318,7 +318,7 @@ export const makeSettingsActionsList = (
       .addExtraButton((button) => {
         button
           .setIcon("arrow-down")
-          .setTooltip("Down")
+          .setTooltip("下移")
           .onClick(async () => {
             try {
               actionsHolder.actions = moveAction(
@@ -342,7 +342,7 @@ export const makeSettingsActionsList = (
       .addExtraButton((button) => {
         button
           .setIcon("settings")
-          .setTooltip("Edit")
+          .setTooltip("编辑")
           .onClick(() => {
             try {
               new ActionSettingsModal(
@@ -366,8 +366,8 @@ export const makeSettingsActionsList = (
   new Setting(elem)
     .addButton((button) => {
       button
-        .setButtonText("Switch info")
-        .setTooltip("Switch the action's information to be displayed")
+        .setButtonText("切换信息")
+        .setTooltip("切换要显示的操作信息")
         .onClick(() => {
           try {
             page.switchInfo = !page.switchInfo;

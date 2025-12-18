@@ -8,7 +8,7 @@ import {
 
 /* Example:
 try {
-  const response = await new StringSuggesterAsync(this.app, items, "enter...").openAndRespond();
+  const response = await new StringSuggesterAsync(this.app, items, "输入...").openAndRespond();
   if (response.aborted) {
     return;
   }

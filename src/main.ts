@@ -97,7 +97,7 @@ export default class AboutBlank extends Plugin {
 
       this.addSettingTab(new AboutBlankSettingTab(this.app, this));
     } catch (error) {
-      loggerOnError(error, "Failed to load plugin.\n(About Blank)");
+      loggerOnError(error, "插件加载失败\n(About Blank)");
     }
   }
 
@@ -115,7 +115,7 @@ export default class AboutBlank extends Plugin {
         this.registerQuickActions();
       }
     } catch (error) {
-      loggerOnError(error, "Failed to load settings.\n(About Blank)");
+      loggerOnError(error, "设置加载失败\n(About Blank)");
     }
   };
 
@@ -144,8 +144,8 @@ export default class AboutBlank extends Plugin {
 
   registerCmdToObsidian = (action: PracticalAction): void => {
     if (typeof action.cmdId !== "string" || typeof action.name !== "string") {
-      new Notice("Failed to register a command.\n(About Blank)");
-      console.warn("About Blank: Failed to register a command.", action);
+      new Notice("命令注册失败\n(About Blank)");
+      console.warn("About Blank: 命令注册失败。", action);
       return;
     }
 
@@ -263,7 +263,7 @@ export default class AboutBlank extends Plugin {
       // Expect: emptyActionListEl has `createEl()` method.
       practicalActions.forEach((action) => this.addActionButton(emptyActionListEl, action));
     } catch (error) {
-      loggerOnError(error, "Failed to add buttons in the empty file view (new tab).\n(About Blank)");
+      loggerOnError(error, "在空文件视图（新标签页）中添加按钮失败\n(About Blank)");
     }
   };
 
@@ -342,14 +342,14 @@ export default class AboutBlank extends Plugin {
     if (0 < results.length || !isRegisterable) {
       const registerableResult = isRegisterable ? "OK" : "Failed";
       const resultsMessage =
-        `"Type/Properties check": ${normalizeResults.length} fixed\n"Command IDs check": ${fixResults.length} fixed\n"Register all commands": ${registerableResult}`;
+        `"类型/属性检查": ${normalizeResults.length} 已修复\n"命令 ID 检查": ${fixResults.length} 已修复\n"注册所有命令": ${registerableResult}`;
       const descMessage =
-        "Check the console for more details. Settings not yet saved, reload Obsidian to discard changes.";
-      new Notice(`${resultsMessage}\n\n${descMessage}\n\n**Click to close**`, 0);
+        "查看控制台获取更多详情。设置尚未保存，重新加载 Obsidian 以放弃更改。";
+      new Notice(`${resultsMessage}\n\n${descMessage}\n\n**点击关闭**`, 0);
       console.log(...normalizeResults, ...fixResults);
       return;
     }
-    new Notice("No settings error found");
+      new Notice("未发现设置错误");
   };
 
   normalizeSettings = (): unknown[] => {

@@ -230,7 +230,7 @@ export class ActionSettingsModal extends Modal {
     this.contentEl.empty();
 
     new Setting(this.contentEl)
-      .setName("Display name / icon")
+      .setName("显示名称/图标")
       .addText((text) => {
         text
           .setPlaceholder(this.orgAction.name)
@@ -249,7 +249,7 @@ export class ActionSettingsModal extends Modal {
       .addExtraButton((button) => {
         button
           .setIcon(this.modAction.icon)
-          .setTooltip("Set icon")
+          .setTooltip("设置图标")
           .onClick(async () => {
             try {
               const noIconId = "*No icon*";
@@ -281,7 +281,7 @@ export class ActionSettingsModal extends Modal {
     const actionContentItem = new Setting(this.contentEl);
     actionContentItem
       .setClass(CSS_CLASSES.settingActionHeader)
-      .setName("Action content:")
+      .setName("操作内容：")
       .setDesc(this.actionContentDesc);
     Object.values(ACTION_KINDS).forEach((kind) => {
       actionContentItem
@@ -342,8 +342,8 @@ export class ActionSettingsModal extends Modal {
     }
 
     new Setting(this.contentEl)
-      .setName("Ask before execution")
-      .setDesc("If enabled, this action will prompt you before execution.")
+      .setName("执行前确认")
+      .setDesc("如果启用，此操作在执行前将提示您确认。")
       .addToggle((toggle) => {
         toggle
           .setValue(this.modAction.ask)
@@ -357,9 +357,9 @@ export class ActionSettingsModal extends Modal {
       });
 
     new Setting(this.contentEl)
-      .setName("Register as a command")
+      .setName("注册为命令")
       .setDesc(
-        "If enabled, this action will be registered as a command in Obsidian. (can be executed from the command palette, etc.)",
+        "如果启用，此操作将在Obsidian中注册为命令。（可以从命令面板等执行）",
       )
       .addToggle((toggle) => {
         toggle
@@ -375,9 +375,9 @@ export class ActionSettingsModal extends Modal {
 
     if (this.pageIndex === 0) {
       new Setting(this.contentEl)
-        .setName("Display")
+        .setName("显示")
         .setDesc(
-          "If enabled, this action will be displayed on the empty file view (new tab) and \"Quick actions\".",
+          "如果启用，此操作将显示在空文件视图（新标签页）和\"快速操作\"中。",
         )
         .addToggle((toggle) => {
           toggle
@@ -393,10 +393,10 @@ export class ActionSettingsModal extends Modal {
     }
 
     new Setting(this.contentEl)
-      .setName("Delete this action")
+      .setName("删除此操作")
       .addButton((button) => {
         button
-          .setButtonText("Delete")
+          .setButtonText("删除")
           .setWarning()
           .onClick(async () => {
             try {
@@ -428,7 +428,7 @@ export class ActionSettingsModal extends Modal {
     new Setting(this.contentEl)
       .addButton((button) => {
         button
-          .setButtonText("Save")
+          .setButtonText("保存")
           .setCta()
           .onClick(async () => {
             await this.saveAction();
@@ -437,7 +437,7 @@ export class ActionSettingsModal extends Modal {
       })
       .addButton((button) => {
         button
-          .setButtonText("Cancel")
+          .setButtonText("取消")
           .onClick(() => {
             this.close();
           });
@@ -446,7 +446,7 @@ export class ActionSettingsModal extends Modal {
     if (this.modAction.content.kind === ACTION_KINDS.group && this.saveNotice) {
       new Setting(this.contentEl)
         .setClass(CSS_CLASSES.settingActionSaveNotice)
-        .setDesc("Child action changes require \"Save\" in parents.");
+        .setDesc("子操作的更改需要在父操作中\"保存\"。")
     }
   };
 }

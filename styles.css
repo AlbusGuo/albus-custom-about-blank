@@ -22,6 +22,38 @@
   flex-direction: row;
   justify-content: center;
   align-items: center;
+  flex-wrap: wrap; /* 允许容器内的项目换行 */
+}
+
+/** - 将命令列表修改为按钮样式布局 */
+body .workspace-leaf-content[data-type="empty"] .empty-state-action-list {
+    display: flex;
+    flex-wrap: wrap; /* 允许按钮换行 */
+    justify-content: left; /* 居中对齐 */
+    gap: 0;
+    border-radius: 4px;
+    box-shadow: var(--input-shadow);
+    max-width: 100%; /* 确保不溢出容器 */
+    box-sizing: border-box;
+    position: relative;
+    top: 10vh;
+}
+
+body .workspace-leaf-content[data-type="empty"] .empty-state-action {
+    font-size: 0;
+    background-color: transparent !important;
+    color: var(--text-muted);
+    cursor: pointer;
+    height: 40px;
+    width: 40px;
+    border-radius: 4px;
+    flex-shrink: 0; /* 防止按钮被压缩 */
+}
+
+body .workspace-leaf-content[data-type="empty"] .empty-state-action:hover {
+    background-color: var(--background-modifier-hover) !important;
+    color: var(--text-normal);
+    border-radius: 4px;
 }
 
 .about-blank-button-container:has(.svg-icon) .about-blank-button {
@@ -162,3 +194,4 @@
 .about-blank-icon-height-adjuster {
   height: var(--input-height);
 }
+

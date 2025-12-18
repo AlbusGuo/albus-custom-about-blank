@@ -25,9 +25,9 @@ export const HIDE_DEFAULT_ACTIONS = {
 export const HIDE_DEFAULT_ACTIONS_NAME: {
   [key in ValuesOf<typeof HIDE_DEFAULT_ACTIONS>]: string;
 } = {
-  notHide: "Not hide",
-  onlyClose: "Only close",
-  all: "All",
+  notHide: "不隐藏",
+  onlyClose: "仅关闭",
+  all: "全部",
 } as const;
 
 // =============================================================================
@@ -37,8 +37,8 @@ export const makeSettingsHideDefaults = (
   page: AboutBlankSettingTab,
 ): void => {
   new Setting(elem)
-    .setName("Hide message")
-    .setDesc("This hides the message in the empty file view (new tab). Example: \"No file is open\".")
+    .setName("隐藏消息")
+    .setDesc("这将隐藏空文件视图（新标签页）中的消息。例如：\"没有打开的文件\"。")
     .addToggle((toggle) => {
       toggle
         .setValue(page.plugin.settings.hideMessage)
@@ -52,9 +52,9 @@ export const makeSettingsHideDefaults = (
         });
     });
   new Setting(elem)
-    .setName("Hide default actions")
+    .setName("隐藏默认操作")
     .setDesc(
-      "This hides the default actions in the empty file view (new tab). Example: \"Create new note\", \"Close\".",
+      "这将隐藏空文件视图（新标签页）中的默认操作。例如：\"创建新笔记\"、\"关闭\"。",
     )
     .addDropdown((dropdown) => {
       dropdown
