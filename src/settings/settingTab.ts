@@ -64,6 +64,11 @@ export interface AboutBlankSettings {
   logoStyle: string;
   logoSize: number;
   logoOpacity: number;
+  // Bongo Cat floating widget
+  bongoCatEnabled?: boolean;
+  bongoCatX?: number; // percent from left
+  bongoCatY?: number; // percent from top
+  bongoCatSize?: "small" | "medium" | "large";
   
   showStats: boolean;
   obsidianStartDate: string;
@@ -95,6 +100,10 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoStyle: "mask",
   logoSize: 40,
   logoOpacity: 0.4,
+  bongoCatEnabled: false,
+  bongoCatX: 80,
+  bongoCatY: 75,
+  bongoCatSize: "medium",
   
   showStats: false,
   obsidianStartDate: "",
@@ -187,6 +196,20 @@ export const settingsPropTypeCheck: {
     return limit.min <= num && num <= limit.max;
   },
   heatmapEnabled: (value: unknown) => isBool(value),
+  bongoCatEnabled: (value: unknown) => isBool(value),
+  bongoCatX: (value: unknown) => {
+    if (!Number.isFinite(value)) return false;
+    const num = value as number;
+    return 0 <= num && num <= 100;
+  },
+  bongoCatY: (value: unknown) => {
+    if (!Number.isFinite(value)) return false;
+    const num = value as number;
+    return 0 <= num && num <= 100;
+  },
+  bongoCatSize: (value: unknown) => {
+    return typeof value === 'string' && ["small","medium","large"].includes(value);
+  },
   heatmapDataSource: (value: unknown) => {
     return typeof value === "string" && ["frontmatter", "fileCreation"].includes(value);
   },
