@@ -252,8 +252,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         this.plugin.settings,
         true,
         null,
-        "操作",
-        "这些操作可以添加到空文件视图（新标签页）中。",
+        "按钮",
+        "这些按钮可以添加到新标签页中",
       );
       makeSettingsActionsList(
         this.containerEl,
@@ -276,7 +276,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     // 移动隐藏消息设置到基本设置
     new Setting(this.containerEl)
       .setName("隐藏消息")
-      .setDesc("隐藏空文件视图（新标签页）中的消息。")
+      .setDesc("隐藏新标签页中的消息")
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.hideMessage)
@@ -293,12 +293,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
     // 移动隐藏默认操作设置到基本设置
     new Setting(this.containerEl)
-      .setName("隐藏默认操作")
-      .setDesc("隐藏空文件视图（新标签页）中的默认操作。")
+      .setName("隐藏默认按钮")
+      .setDesc("隐藏新标签页中的默认按钮")
       .addDropdown((dropdown) => {
         dropdown
           .addOption("notHide", "不隐藏")
-          .addOption("onlyClose", "仅关闭")
+          .addOption("onlyClose", "仅关闭按钮")
           .addOption("all", "全部")
           .setValue(this.plugin.settings.hideDefaultActions)
           .onChange(async (value: "notHide" | "onlyClose" | "all") => {
@@ -315,9 +315,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
   private makeSettingsAddActions = (): void => {
     new Setting(this.containerEl)
-      .setName("向空文件视图（新标签页）添加操作")
+      .setName("向新标签页添加按钮")
       .setDesc(
-        "如果启用，\"操作\"将被添加到空文件视图（新标签页）中。更改此设置后，需要重新加载 Obsidian。",
+        "如果启用，\"按钮\"将被添加到新标签页中, 更改此设置后, 需要重新加载 Obsidian",
       )
       .addToggle((toggle) => {
         toggle
@@ -343,9 +343,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsQuickActions = (): void => {
     const settingItem = new Setting(this.containerEl);
     settingItem
-      .setName("快速操作")
+      .setName("注册按钮")
       .setDesc(
-        "将要添加到空文件视图（新标签页）的操作编译为建议器，并在 Obsidian 中注册为命令。",
+        "将要添加到新标签页的按钮编译为建议器, 并在 Obsidian 中注册为命令",
       );
     if (this.plugin.settings.quickActions === true) {
       settingItem
@@ -408,15 +408,15 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsLogo = (): void => {
     new Setting(this.containerEl)
       .setHeading()
-      .setName("Logo设置");
+      .setName("Logo 设置");
 
       
 
       
 
       new Setting(this.containerEl)
-        .setName("启用Logo")
-        .setDesc("在新标签页显示自定义Logo图片")
+        .setName("启用 Logo")
+        .setDesc("在新标签页显示自定义 Logo 图片")
         .addToggle((toggle) => {
           toggle
             .setValue(this.plugin.settings.logoEnabled)
@@ -435,12 +435,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         // 添加Logo文件目录设置（放在Logo图片路径上方）
         let logoDirectoryInput: TextComponent;
         new Setting(this.containerEl)
-        .setName("Logo文件目录")
-        .setDesc("限制只显示指定目录下的图片文件（可选，留空显示所有图片）")
+        .setName("Logo 文件目录")
+        .setDesc("限制只显示指定目录下的图片文件 (留空显示所有图片)")
         .addText((text) => {
           logoDirectoryInput = text;
           text
-            .setPlaceholder("例如: assets/logos 或 images/")
+            .setPlaceholder("")
             .setValue(this.plugin.settings.logoDirectory)
             .onChange(async (value) => {
               try {
@@ -464,12 +464,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         let logoTextInput: TextComponent;
           
           const logoPathSetting = new Setting(this.containerEl)
-          .setName("Logo图片路径")
-          .setDesc("选择库内图片文件作为Logo，或输入相对路径")
+          .setName("Logo 图片路径")
+          .setDesc("选择库内图片文件作为 Logo")
           .addText((text) => {
             logoTextInput = text;
             text
-              .setPlaceholder("例如: assets/logo.png 或点击选择文件...")
+              .setPlaceholder("遮罩样式推荐使用透明背景的图片, 只保留形状")
               .setValue(this.plugin.settings.logoPath)
               .onChange(async (value) => {
                 try {
@@ -506,14 +506,14 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   }
                 } catch (error) {
                   loggerOnError(error, "文件选择失败\n(About Blank)");
-                  new Notice("文件选择失败，请手动输入图片的相对路径", 5000);
+                  new Notice("文件选择失败, 请手动输入图片的相对路径", 5000);
                 }
               });
           });
 
         new Setting(this.containerEl)
-          .setName("Logo样式")
-          .setDesc("选择Logo的显示样式")
+          .setName("Logo 样式")
+          .setDesc("选择 Logo 的显示样式")
           .addDropdown((dropdown) => {
             dropdown
               .addOption("mask", "遮罩样式")
@@ -532,8 +532,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         // Logo大小输入框
         let logoSizeInput: TextComponent;
         new Setting(this.containerEl)
-          .setName("Logo大小")
-          .setDesc(`设置Logo的显示大小 (像素范围: ${DEFAULT_SETTINGS_LIMIT.logoSize?.min}-${DEFAULT_SETTINGS_LIMIT.logoSize?.max})`)
+          .setName("Logo 大小")
+          .setDesc(`设置 Logo 的尺寸 (像素范围: ${DEFAULT_SETTINGS_LIMIT.logoSize?.min}-${DEFAULT_SETTINGS_LIMIT.logoSize?.max})`)
           .addText((text) => {
             logoSizeInput = text;
             text
@@ -572,7 +572,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         // Logo透明度输入框
         let logoOpacityInput: TextComponent;
         new Setting(this.containerEl)
-          .setName("Logo透明度")
+          .setName("Logo 透明度")
           .setDesc(`设置Logo的透明度 (范围: ${DEFAULT_SETTINGS_LIMIT.logoOpacity?.min}-${DEFAULT_SETTINGS_LIMIT.logoOpacity?.max})`)
           .addText((text) => {
             logoOpacityInput = text;
@@ -618,12 +618,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     new Setting(this.containerEl)
       .setHeading()
       .setName("统计设置")
-      .setDesc("配置Logo周围的统计气泡显示");
+      .setDesc("配置 Logo 周围的统计气泡显示");
     
     // 统计气泡开关
     new Setting(this.containerEl)
       .setName("显示统计气泡")
-      .setDesc("在Logo周围显示文件统计信息气泡")
+      .setDesc("在 Logo 周围显示文件统计信息气泡")
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.showStats)
@@ -645,11 +645,11 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       let obsidianStartDateInput: TextComponent;
       new Setting(this.containerEl)
         .setName("Obsidian 开始使用日期")
-        .setDesc("用于计算使用天数和统计信息")
+        .setDesc("用于计算使用 Obsidian 的天数")
         .addText((text) => {
           obsidianStartDateInput = text;
           text
-            .setPlaceholder("例如: 2020-01-01")
+            .setPlaceholder("例如: 2025-12-19")
             .setValue(this.plugin.settings.obsidianStartDate)
             .onChange(async (value) => {
               try {
@@ -673,7 +673,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       // 自定义统计项目设置
       new Setting(this.containerEl)
         .setName("自定义统计项目")
-        .setDesc("配置要显示的统计信息，支持文件夹、标签和文件类型统计");
+        .setDesc("配置要显示的统计信息, 支持文件夹、标签和文件类型统计");
 
       // 创建一个容器来包裹动态的统计项目设置
       const statsContainer = this.containerEl.createEl('div', { cls: 'about-blank-stats-container' });
@@ -690,7 +690,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           emptyState.style.marginTop = '-10px';
           emptyState.style.marginBottom = '15px';
           emptyState.style.color = 'var(--text-muted)';
-          emptyState.textContent = '暂无自定义统计项目，点击下方按钮添加';
+          emptyState.textContent = '暂无自定义统计项目, 点击下方按钮添加';
           return;
         }
         
@@ -745,7 +745,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   }
                 } catch (error) {
                   loggerOnError(error, "文件夹选择失败\n(About Blank)");
-                  new Notice("文件夹选择失败，请手动输入文件夹路径", 5000);
+                  new Notice("文件夹选择失败, 请手动输入文件夹路径", 5000);
                 }
               });
             });
@@ -845,12 +845,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     new Setting(this.containerEl)
       .setHeading()
       .setName("热力图设置")
-      .setDesc("配置新标签页中的文件创建热力图显示");
+      .setDesc("配置新标签页中的文件数量热力图显示");
     
     // 热力图设置
     new Setting(this.containerEl)
       .setName("启用热力图")
-      .setDesc("在新标签页显示文件创建热力图")
+      .setDesc("在新标签页显示文件数量热力图")
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.heatmapEnabled)
@@ -888,7 +888,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       if (this.plugin.settings.heatmapDataSource === "frontmatter") {
         new Setting(this.containerEl)
           .setName("Frontmatter 字段名")
-          .setDesc("设置用于统计日期的 frontmatter 字段名称")
+          .setDesc("设置用于统计日期的 Frontmatter 字段名称")
           .addText((text) => {
             text
               .setPlaceholder("例如: created")
@@ -1047,7 +1047,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     if (this.showCleanUpSettings) {
       settingItem
         .setDesc(
-          "检查设置数据、类型或值、重复的命令 ID 等，并初始化任何异常部分。更改的详细信息将输出到控制台。除非触发，否则这些更改实际上不会保存。可以通过重新加载 Obsidian 来放弃这些更改。",
+          "检查设置数据、类型或值、重复的命令 ID 等, 并初始化任何异常部分. 更改的详细信息将输出到控制台. 除非触发, 否则这些更改实际上不会保存. 可以通过重新加载 Obsidian 来放弃这些更改",
         )
         .addButton((button) => {
           button
