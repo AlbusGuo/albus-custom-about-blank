@@ -63,6 +63,7 @@ export interface AboutBlankSettings {
   logoDirectory: string;
   logoStyle: string;
   logoSize: number;
+  logoOpacity: number;
   
   showStats: boolean;
   obsidianStartDate: string;
@@ -93,6 +94,7 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoDirectory: "",
   logoStyle: "mask",
   logoSize: 40,
+  logoOpacity: 0.4,
   
   showStats: false,
   obsidianStartDate: "",
@@ -123,6 +125,10 @@ export const DEFAULT_SETTINGS_LIMIT: Partial<
   logoSize: {
     min: 20,
     max: 1000,
+  },
+  logoOpacity: {
+    min: 0,
+    max: 1,
   },
 } as const;
 
@@ -163,7 +169,21 @@ export const settingsPropTypeCheck: {
     if (!limit || !Number.isFinite(limit.min) || !Number.isFinite(limit.max) || limit.min >= limit.max) {
       return false;
     }
-    const num = adjustInt(value as number);
+    if (!Number.isFinite(value)) {
+      return false;
+    }
+    const num = value as number;
+    return limit.min <= num && num <= limit.max;
+  },
+  logoOpacity: (value: unknown) => {
+    const limit = DEFAULT_SETTINGS_LIMIT.logoOpacity;
+    if (!limit || !Number.isFinite(limit.min) || !Number.isFinite(limit.max) || limit.min >= limit.max) {
+      return false;
+    }
+    if (!Number.isFinite(value)) {
+      return false;
+    }
+    const num = value as number;
     return limit.min <= num && num <= limit.max;
   },
   heatmapEnabled: (value: unknown) => isBool(value),
@@ -509,25 +529,79 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               });
           });
 
+        // Logo大小输入框
+        let logoSizeInput: TextComponent;
         new Setting(this.containerEl)
           .setName("Logo大小")
           .setDesc(`设置Logo的显示大小 (像素范围: ${DEFAULT_SETTINGS_LIMIT.logoSize?.min}-${DEFAULT_SETTINGS_LIMIT.logoSize?.max})`)
-          .addSlider((slider) => {
-            const limit = DEFAULT_SETTINGS_LIMIT.logoSize;
-            if (!limit || !Number.isFinite(limit.min) || !Number.isFinite(limit.max) || limit.min >= limit.max) {
-              return;
-            }
-            slider
-              .setLimits(limit.min, limit.max, 1)
-              .setValue(this.plugin.settings.logoSize)
-              .setDynamicTooltip()
+          .addText((text) => {
+            logoSizeInput = text;
+            text
+              .setPlaceholder(`例如: ${DEFAULT_SETTINGS.logoSize}`)
+              .setValue(this.plugin.settings.logoSize.toString())
               .onChange(async (value) => {
                 try {
-                  const num = adjustInt(value);
+                  const num = adjustInt(parseFloat(value));
                   if (!settingsPropTypeCheck.logoSize(num)) {
                     return;
                   }
                   this.plugin.settings.logoSize = num;
+                  // 不在这里调用saveSettings，避免输入框退出
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+              
+              // 添加输入框失焦保存
+              logoSizeInput.inputEl.addEventListener('blur', async () => {
+                try {
+                  const num = adjustInt(parseFloat(logoSizeInput.getValue()));
+                  if (!settingsPropTypeCheck.logoSize(num)) {
+                    // 如果输入无效，恢复为默认值
+                    logoSizeInput.setValue(this.plugin.settings.logoSize.toString());
+                    return;
+                  }
+                  this.plugin.settings.logoSize = num;
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+
+        // Logo透明度输入框
+        let logoOpacityInput: TextComponent;
+        new Setting(this.containerEl)
+          .setName("Logo透明度")
+          .setDesc(`设置Logo的透明度 (范围: ${DEFAULT_SETTINGS_LIMIT.logoOpacity?.min}-${DEFAULT_SETTINGS_LIMIT.logoOpacity?.max})`)
+          .addText((text) => {
+            logoOpacityInput = text;
+            text
+              .setPlaceholder(`例如: ${DEFAULT_SETTINGS.logoOpacity}`)
+              .setValue(this.plugin.settings.logoOpacity.toString())
+              .onChange(async (value) => {
+                try {
+                  const num = parseFloat(value);
+                  if (!settingsPropTypeCheck.logoOpacity(num)) {
+                    return;
+                  }
+                  this.plugin.settings.logoOpacity = num;
+                  // 不在这里调用saveSettings，避免输入框退出
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+              
+              // 添加输入框失焦保存
+              logoOpacityInput.inputEl.addEventListener('blur', async () => {
+                try {
+                  const num = parseFloat(logoOpacityInput.getValue());
+                  if (!settingsPropTypeCheck.logoOpacity(num)) {
+                    // 如果输入无效，恢复为默认值
+                    logoOpacityInput.setValue(this.plugin.settings.logoOpacity.toString());
+                    return;
+                  }
+                  this.plugin.settings.logoOpacity = num;
                   await this.plugin.saveSettings();
                 } catch (error) {
                   loggerOnError(error, "设置中出现错误\n(About Blank)");

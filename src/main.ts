@@ -1626,6 +1626,10 @@ export default class AboutBlank extends Plugin {
       root.style.setProperty('--about-blank-logo-size', logoSize);
       // 设置Logo大小
       
+      // Set logo opacity
+      root.style.setProperty('--about-blank-logo-opacity', this.settings.logoOpacity.toString());
+      // 设置Logo透明度
+      
       // Set logo position (固定为top)
       root.style.setProperty('--about-blank-logo-position', 'top');
       

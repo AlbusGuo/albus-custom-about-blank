@@ -14,6 +14,7 @@
   --about-blank-empty-state-list-margin-top-mobile: 40px;
   --about-blank-logo-image: none;
   --about-blank-logo-size: 120px;
+  --about-blank-logo-opacity: 0.4;
   --about-blank-logo-position: top;
 }
 
@@ -318,7 +319,7 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-image: var(--about-blank-logo-image);
   pointer-events: none;
-  opacity: 0.4;
+  opacity: var(--about-blank-logo-opacity);
   z-index: 1;
   min-width: 20px;
   min-height: 20px;
@@ -337,7 +338,7 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   background-repeat: no-repeat;
   background-image: var(--about-blank-logo-image);
   pointer-events: none;
-  opacity: 0.4;
+  opacity: var(--about-blank-logo-opacity);
   z-index: 1;
   min-width: 20px;
   min-height: 20px;
