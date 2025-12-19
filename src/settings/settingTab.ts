@@ -65,7 +65,6 @@ export interface AboutBlankSettings {
   logoSize: number;
   logoPosition: string;
   heatmapEnabled: boolean;
-  heatmapYear: number;
   heatmapDataSource: string;
   heatmapFrontmatterField: string;
   heatmapColorSegments: Array<{min: number, max: number, color: string}>;
@@ -88,7 +87,6 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoSize: 40,
   logoPosition: "top",
   heatmapEnabled: false,
-  heatmapYear: new Date().getFullYear(),
   heatmapDataSource: "frontmatter",
   heatmapFrontmatterField: "created",
   heatmapColorSegments: [
@@ -157,10 +155,6 @@ export const settingsPropTypeCheck: {
     return limit.min <= num && num <= limit.max;
   },
   heatmapEnabled: (value: unknown) => isBool(value),
-  heatmapYear: (value: unknown) => {
-    const num = adjustInt(value as number);
-    return num >= 2000 && num <= 2100;
-  },
   heatmapDataSource: (value: unknown) => {
     return typeof value === "string" && ["frontmatter", "fileCreation"].includes(value);
   },
@@ -548,26 +542,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       });
 
     if (this.plugin.settings.heatmapEnabled) {
-      new Setting(this.containerEl)
-        .setName("热力图年份")
-        .setDesc("设置要显示的热力图年份")
-        .addText((text) => {
-          text
-            .setPlaceholder("例如: 2024")
-            .setValue(this.plugin.settings.heatmapYear.toString())
-            .onChange(async (value) => {
-              try {
-                const year = parseInt(value);
-                if (year >= 2000 && year <= 2100) {
-                  this.plugin.settings.heatmapYear = year;
-                  await this.plugin.saveSettings();
-                }
-              } catch (error) {
-                loggerOnError(error, "设置中出现错误\n(About Blank)");
-              }
-            });
-        });
-
       new Setting(this.containerEl)
         .setName("数据来源")
         .setDesc("选择统计文件日期的数据来源")

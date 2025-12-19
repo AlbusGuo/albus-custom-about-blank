@@ -83,7 +83,51 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
     width: 100%;
     height: 100%;
 }
+/* 热力图控制按钮样式 */
+.about-blank-heatmap-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 0 20px;
+}
 
+.about-blank-heatmap-year-button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.about-blank-heatmap-controls:hover .about-blank-heatmap-year-button {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.about-blank-heatmap-year-button:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.about-blank-heatmap-year-display {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  opacity: 0;
+  transform: scale(0.9);
+  transition: all 0.2s ease;
+}
+
+.about-blank-heatmap-controls:hover .about-blank-heatmap-year-display {
+  opacity: 1;
+  transform: scale(1);
+}
 /* 热力图悬浮提示样式 - 匹配React组件设计 */
 .about-blank-heatmap-cell:hover::after {
     content: attr(data-date) ", " attr(data-count) " 个文件";

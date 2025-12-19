@@ -693,7 +693,7 @@ export default class AboutBlank extends Plugin {
 
   generateHeatmapData = (): void => {
     try {
-      const year = this.settings.heatmapYear;
+      const year = new Date().getFullYear();
       const dataSource = this.settings.heatmapDataSource;
       const frontmatterField = this.settings.heatmapFrontmatterField;
       
@@ -758,7 +758,7 @@ export default class AboutBlank extends Plugin {
 
   renderHeatmap = (dateCountMap: { [key: string]: number }): void => {
     try {
-      const year = this.settings.heatmapYear;
+      const year = new Date().getFullYear();
       const colorSegments = this.settings.heatmapColorSegments;
       
       // 缓存数据供后续使用
@@ -873,6 +873,65 @@ export default class AboutBlank extends Plugin {
     }
   };
 
+  changeHeatmapYear = (heatmapContainer: HTMLElement, newYear: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
+    // 重新生成新年份的数据
+    const newDateCountMap: { [key: string]: number } = {};
+    const dataSource = this.settings.heatmapDataSource;
+    const frontmatterField = this.settings.heatmapFrontmatterField;
+    
+    // 使用 UTC 日期避免时区问题
+    const startDate = new Date(Date.UTC(newYear, 0, 1));
+    const endDate = new Date(Date.UTC(newYear, 11, 31));
+    
+    // 获取所有markdown文件
+    const markdownFiles = this.app.vault.getMarkdownFiles();
+    
+    // 初始化全年日期
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      newDateCountMap[dateStr] = 0;
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+    
+    // 统计文件
+    for (const file of markdownFiles) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      let fileDate: Date | null = null;
+      
+      if (dataSource === "fileCreation" && file.stat) {
+        fileDate = new Date(file.stat.ctime);
+      } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
+        const dateValue = cache.frontmatter[frontmatterField];
+        if (dateValue) {
+          const parsedDate = new Date(dateValue);
+          if (!isNaN(parsedDate.getTime())) {
+            fileDate = parsedDate;
+          }
+        }
+      }
+      
+      if (fileDate && !isNaN(fileDate.getTime())) {
+        const utcFileDate = new Date(Date.UTC(
+          fileDate.getFullYear(),
+          fileDate.getMonth(),
+          fileDate.getDate()
+        ));
+        const dateStr = utcFileDate.toISOString().split('T')[0];
+        
+        if (utcFileDate.getUTCFullYear() === newYear) {
+          newDateCountMap[dateStr] = (newDateCountMap[dateStr] || 0) + 1;
+        }
+      }
+    }
+    
+    // 清空热力图容器
+    heatmapContainer.empty();
+    
+    // 重新创建热力图内容
+    this.createHeatmapContent(heatmapContainer, newYear, colorSegments, newDateCountMap);
+  };
+
   createHeatmapContent = (heatmapContainer: HTMLElement, year: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
     try {
       // 找到当前热力图容器所属的标签页
@@ -889,6 +948,25 @@ export default class AboutBlank extends Plugin {
           // 移除滚动条设置
         }
       }
+      
+      // 创建热力图控制容器
+      const controlsContainer = heatmapContainer.createEl('div', { cls: 'about-blank-heatmap-controls' });
+      
+      // 创建年份切换按钮
+      const prevButton = controlsContainer.createEl('button', { cls: 'about-blank-heatmap-year-button about-blank-heatmap-year-prev' });
+      prevButton.innerHTML = '‹';
+      prevButton.addEventListener('click', () => {
+        this.changeHeatmapYear(heatmapContainer, year - 1, colorSegments, dateCountMap);
+      });
+      
+      const yearDisplay = controlsContainer.createEl('div', { cls: 'about-blank-heatmap-year-display' });
+      yearDisplay.textContent = year.toString();
+      
+      const nextButton = controlsContainer.createEl('button', { cls: 'about-blank-heatmap-year-button about-blank-heatmap-year-next' });
+      nextButton.innerHTML = '›';
+      nextButton.addEventListener('click', () => {
+        this.changeHeatmapYear(heatmapContainer, year + 1, colorSegments, dateCountMap);
+      });
       
       // 创建热力图容器
       const chartsEl = heatmapContainer.createEl('div', { cls: 'about-blank-heatmap-charts' });
