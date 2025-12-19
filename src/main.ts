@@ -1,6 +1,7 @@
 import {
   type Command,
-  type TFile,
+  TFile,
+  TFolder,
   Modal,
   Notice,
   Plugin,
@@ -148,6 +149,11 @@ export default class AboutBlank extends Plugin {
     this.applyHeatmapSettings();
     // Reset all New tabs
     this.closeAllNewTabs();
+  };
+
+  // 保存设置但不刷新页面
+  saveSettingsSilent = async () => {
+    await this.saveData(this.settings);
   };
 
   // ---------------------------------------------------------------------------
@@ -567,6 +573,29 @@ export default class AboutBlank extends Plugin {
     }
   };
 
+  applyStatsSettings = (): void => {
+    try {
+      if (this.settings.showStats) {
+        // 创建统计气泡
+        this.createStatsBubbles();
+        
+        // 添加工作区事件监听
+        this.registerWorkspaceEvents();
+      } else {
+        // 移除统计气泡容器
+        const statsContainers = document.querySelectorAll('.about-blank-stats-bubbles');
+        statsContainers.forEach(container => container.remove());
+        
+        // 清除全局渲染函数
+        if ((this as any).globalRenderStats) {
+          (this as any).globalRenderStats = null;
+        }
+      }
+    } catch (error) {
+      loggerOnError(error, "应用统计设置失败\n(About Blank)");
+    }
+  };
+
   applyHeatmapSettings = (): void => {
     try {
       const root = document.documentElement;
@@ -600,20 +629,50 @@ export default class AboutBlank extends Plugin {
   };
 
   registerWorkspaceEvents = (): void => {
-    // 监听工作区事件，确保在标签页切换时也能渲染热力图
+    // 监听工作区事件，确保在标签页切换时也能渲染热力图和统计气泡
+    let leafChangeTimeout: NodeJS.Timeout | null = null;
+    let isProcessingLeafChange = false;
     this.app.workspace.on('active-leaf-change', () => {
-      setTimeout(() => {
+      if (isProcessingLeafChange) return; // 如果正在处理，跳过本次变化
+      
+      // 清除之前的超时，避免重复触发
+      if (leafChangeTimeout) {
+        clearTimeout(leafChangeTimeout);
+      }
+      
+      leafChangeTimeout = setTimeout(() => {
+        if (isProcessingLeafChange) return; // 再次检查处理状态
+        
+        isProcessingLeafChange = true;
+        
+        // 渲染热力图
         if (this.settings.heatmapEnabled && (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
           (this as any).globalRenderHeatmap();
         }
-      }, 100);
+        
+        // 渲染统计气泡（使用防抖）
+        if (this.settings.showStats && (this as any).globalRenderStats) {
+          (this as any).globalRenderStats();
+        }
+        
+        // 重置处理状态
+        setTimeout(() => {
+          isProcessingLeafChange = false;
+        }, 300);
+      }, 150);
     });
     
-    // 使用MutationObserver监听DOM变化，但只监听工作区容器，减少性能影响
+    // 使用优化的MutationObserver监听DOM变化
     const workspaceContainer = document.querySelector('.workspace');
     if (workspaceContainer) {
+      let observerTimeout: NodeJS.Timeout | null = null;
+      let isProcessing = false; // 添加处理状态标志
+      
       const observer = new MutationObserver((mutations) => {
+        if (isProcessing) return; // 如果正在处理，跳过本次变化
+        
         let shouldRerender = false;
+        let hasNewEmptyLeaf = false;
         
         mutations.forEach((mutation) => {
           if (mutation.type === 'childList') {
@@ -624,17 +683,40 @@ export default class AboutBlank extends Plugin {
                 if (element.classList.contains('workspace-leaf-content') && 
                     element.getAttribute('data-type') === 'empty') {
                   shouldRerender = true;
+                  hasNewEmptyLeaf = true;
                 }
               }
             });
           }
         });
         
-        if (shouldRerender && this.settings.heatmapEnabled && 
-            (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-          setTimeout(() => {
-            (this as any).globalRenderHeatmap();
-          }, 200);
+        if (shouldRerender) {
+          // 清除之前的超时，避免重复触发
+          if (observerTimeout) {
+            clearTimeout(observerTimeout);
+          }
+          
+          observerTimeout = setTimeout(() => {
+            if (isProcessing) return; // 再次检查处理状态
+            
+            isProcessing = true; // 设置处理状态
+            
+            // 渲染热力图
+            if (this.settings.heatmapEnabled && 
+                (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
+              (this as any).globalRenderHeatmap();
+            }
+            
+            // 渲染统计气泡（使用防抖）
+            if (this.settings.showStats && (this as any).globalRenderStats) {
+              (this as any).globalRenderStats();
+            }
+            
+            // 重置处理状态
+            setTimeout(() => {
+              isProcessing = false;
+            }, 500); // 确保渲染完成后再重置
+          }, hasNewEmptyLeaf ? 100 : 300); // 新标签页更快响应
         }
       });
       
@@ -873,63 +955,461 @@ export default class AboutBlank extends Plugin {
     }
   };
 
+  // 计算所有文件的总大小（GB）
+  calculateTotalFileSize = (): string => {
+    const allFiles = this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile);
+    const totalBytes = allFiles.reduce((total, file) => total + file.stat.size, 0);
+    const totalGB = totalBytes / (1024 * 1024 * 1024);
+    return totalGB.toFixed(2);
+  };
+
+  // 计算所有文件的总数
+  calculateTotalFileCount = (): number => {
+    return this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile).length;
+  };
+
+  // 计算使用天数
+  calculateUsageDays = (): number => {
+    if (!this.settings.obsidianStartDate) return 0;
+    
+    const startDate = new Date(this.settings.obsidianStartDate);
+    const today = new Date();
+    const days = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    return days >= 0 ? days : 0;
+  };
+
+  // 计算特定文件类型的文件数量
+  calculateFileTypeCount = (fileExtension: string): number => {
+    if (!fileExtension) return 0;
+    
+    const allFiles = this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile);
+    return allFiles.filter(file => file.extension === fileExtension).length;
+  };
+
+  // 计算自定义统计项目的文件数量
+  calculateCustomStatCount = (stat: any): number => {
+    if (!stat) return 0;
+    
+    const { type, value } = stat;
+    
+    switch (type) {
+      case 'folder':
+        if (!value) return 0;
+        const allFiles = this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile);
+        const folderFiles = allFiles.filter(file => {
+          const fileFolder = file.path.split('/').slice(0, -1).join('/');
+          return fileFolder === value || file.path.startsWith(value + '/');
+        });
+        return folderFiles.length;
+        
+      case 'fileType':
+        return this.calculateFileTypeCount(value);
+        
+      default:
+        return 0;
+    }
+  };
+
+  // 创建统计气泡
+  createStatsBubbles = (): void => {
+    try {
+      // 检查是否启用统计
+      if (!this.settings.showStats) {
+        // 移除所有现有的统计气泡
+        const existingStatsContainers = document.querySelectorAll('.about-blank-stats-bubbles');
+        existingStatsContainers.forEach(container => container.remove());
+        return;
+      }
+      
+      // 缓存统计数据，避免重复计算
+      let cachedStats: Array<{id: string, label: string, value: number | string}> | null = null;
+      let lastStatsUpdate = 0;
+      const STATS_CACHE_DURATION = 1000; // 1秒缓存
+      
+      const getStatsData = () => {
+        const now = Date.now();
+        if (cachedStats && (now - lastStatsUpdate) < STATS_CACHE_DURATION) {
+          return cachedStats;
+        }
+        
+        // 基础统计项目
+        const baseStats = [
+          { id: 'usage-days', label: "使用天数", value: this.calculateUsageDays() },
+          { id: 'file-count', label: "文件数量", value: this.calculateTotalFileCount() },
+          { id: 'storage-size', label: "存储空间", value: `${this.calculateTotalFileSize()}G` }
+        ];
+
+        // 自定义统计项目
+        const customStatsItems = (this.settings.customStats || []).map((stat: any, index: number) => ({
+          id: `custom-${index}`,
+          label: stat.displayName || stat.value || `统计项目${index + 1}`,
+          value: this.calculateCustomStatCount(stat)
+        }));
+
+        // 合并所有统计项目
+        cachedStats = [...baseStats, ...customStatsItems];
+        lastStatsUpdate = now;
+        return cachedStats;
+      };
+      
+      // 防抖渲染函数
+      let renderTimeout: NodeJS.Timeout | null = null;
+      const debouncedRender = () => {
+        if (renderTimeout) {
+          clearTimeout(renderTimeout);
+        }
+        renderTimeout = setTimeout(() => {
+          renderStatsInAllLeavesImpl();
+        }, 50); // 50ms防抖
+      };
+      
+      const renderStatsInAllLeavesImpl = () => {
+        // 获取所有空的新标签页
+        const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
+        
+        if (emptyLeaves.length === 0) return;
+        
+        // 获取统计数据（使用缓存）
+        const allStats = getStatsData();
+        
+        // 获取排序后的统计项目
+        const getOrderedStats = () => {
+          // 如果没有设置顺序，使用默认顺序
+          if (!this.settings.statOrder || this.settings.statOrder.length === 0) {
+            return allStats;
+          }
+          
+          // 根据保存的顺序排序，同时包含新添加的统计项目
+          const orderedStats = this.settings.statOrder
+            .map(id => allStats.find(stat => stat.id === id))
+            .filter(stat => stat); // 过滤掉不存在的项目
+          
+          // 添加不在排序数组中的新统计项目
+          const newStats = allStats.filter(stat => !this.settings.statOrder.includes(stat.id));
+          
+          return [...orderedStats, ...newStats];
+        };
+        
+        const orderedStats = getOrderedStats();
+        
+        emptyLeaves.forEach(leaf => {
+          // 查找空状态容器
+          const container = leaf.querySelector('.empty-state-container') as HTMLElement;
+          if (!container) return;
+          
+          // 检查容器是否已经完全加载和渲染
+          const actionList = container.querySelector('.empty-state-action-list');
+          if (!actionList) return; // 等待action列表加载完成
+          
+          // 检查是否已经有统计气泡
+          const existingStats = container.querySelector('.about-blank-stats-bubbles');
+          if (existingStats) return; // 已存在则跳过，避免重复渲染
+          
+          // 检查logo是否已经渲染
+          const hasLogo = container.classList.contains('logo-top') || 
+                         container.querySelector('.empty-state-container::before');
+
+          // 创建统计气泡容器
+          const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
+
+          // 缓存位置计算结果
+          const containerHeight = container.clientHeight || 400;
+          const logoSize = this.settings.logoSize || 120;
+          const bubbleSpacing = 50;
+          const sideMargin = 20;
+          
+          // logo固定在顶部，距离顶部约20%的位置
+          const logoActualY = containerHeight * 0.2;
+          
+          // 计算每侧的气泡数量
+          const leftCount = Math.ceil(allStats.length / 2);
+          const rightCount = Math.floor(allStats.length / 2);
+          const maxBubblesPerSide = Math.max(leftCount, rightCount);
+          
+          // 计算气泡可用的垂直空间
+          const availableSpaceBelow = containerHeight - logoActualY - (logoSize / 2) - 100;
+          const availableSpaceAbove = logoActualY - (logoSize / 2) - 50;
+          
+          // 计算气泡分布策略
+          let adjustedSpacing = bubbleSpacing;
+          let distributeAbove = false;
+          
+          if (availableSpaceBelow < (maxBubblesPerSide - 1) * bubbleSpacing) {
+            if (availableSpaceAbove > availableSpaceBelow) {
+              distributeAbove = true;
+              adjustedSpacing = Math.min(bubbleSpacing, availableSpaceAbove / Math.max(maxBubblesPerSide - 1, 1));
+            } else {
+              adjustedSpacing = Math.min(bubbleSpacing, availableSpaceBelow / Math.max(maxBubblesPerSide - 1, 1));
+            }
+          }
+          
+          // 创建统计气泡
+          orderedStats.forEach((stat, index) => {
+            if (!stat) return;
+            
+            const isLeft = index % 2 === 0;
+            const sideIndex = isLeft ? Math.floor(index / 2) : Math.floor(index / 2);
+            
+            // 计算垂直位置
+            let verticalOffset;
+            if (maxBubblesPerSide === 1) {
+              verticalOffset = 0;
+            } else {
+              const totalSpan = (maxBubblesPerSide - 1) * adjustedSpacing;
+              verticalOffset = -totalSpan / 2 + (sideIndex * adjustedSpacing);
+            }
+            
+            // 计算最终位置
+            let finalY;
+            if (distributeAbove) {
+              finalY = logoActualY - (logoSize / 2) - sideMargin - Math.abs(verticalOffset);
+            } else {
+              finalY = logoActualY + (logoSize / 2) + sideMargin + verticalOffset;
+            }
+            
+            const bubble = statsContainer.createEl('div', { cls: 'about-blank-stats-bubble' });
+            
+            // 根据左右位置添加样式类
+            if (isLeft) {
+              bubble.addClass('about-blank-stats-bubble-left');
+            } else {
+              bubble.addClass('about-blank-stats-bubble-right');
+            }
+            
+            // 设置拖拽属性
+            bubble.setAttribute('draggable', 'true');
+            bubble.setAttribute('data-stat-id', stat.id);
+            
+            // 设置最终计算的位置
+            bubble.style.top = `${finalY}px`;
+            
+            // 创建统计内容
+            const label = bubble.createEl('div', { cls: 'about-blank-stats-bubble-label' });
+            label.textContent = stat.label;
+            
+            const value = bubble.createEl('div', { cls: 'about-blank-stats-bubble-value' });
+            value.textContent = stat.value.toString();
+            
+            // 添加拖拽事件监听器
+            bubble.addEventListener('dragstart', (e) => {
+              e.dataTransfer?.setData('text/plain', stat.id);
+              bubble.classList.add('about-blank-stats-bubble-dragging');
+              e.dataTransfer!.effectAllowed = 'move';
+            });
+            
+            bubble.addEventListener('dragend', () => {
+              bubble.classList.remove('about-blank-stats-bubble-dragging');
+              // 移除所有拖拽悬停样式
+              document.querySelectorAll('.about-blank-stats-bubble-drag-over').forEach(el => {
+                el.classList.remove('about-blank-stats-bubble-drag-over');
+              });
+            });
+            
+            bubble.addEventListener('dragover', (e) => {
+              e.preventDefault();
+              e.dataTransfer!.dropEffect = 'move';
+              if (!bubble.classList.contains('about-blank-stats-bubble-drag-over')) {
+                bubble.classList.add('about-blank-stats-bubble-drag-over');
+              }
+            });
+            
+            bubble.addEventListener('dragleave', () => {
+              bubble.classList.remove('about-blank-stats-bubble-drag-over');
+            });
+            
+            bubble.addEventListener('drop', (e) => {
+              e.preventDefault();
+              bubble.classList.remove('about-blank-stats-bubble-drag-over');
+              
+              const draggedStatId = e.dataTransfer?.getData('text/plain');
+              const targetStatId = stat.id;
+              
+              if (draggedStatId && draggedStatId !== targetStatId) {
+                // 获取当前顺序
+                const currentOrder = this.settings.statOrder.length > 0 ? [...this.settings.statOrder] : orderedStats.map(s => s?.id || '');
+                
+                // 确保所有统计项目都在排序数组中
+                orderedStats.forEach(s => {
+                  if (s && !currentOrder.includes(s.id)) {
+                    currentOrder.push(s.id);
+                  }
+                });
+                
+                const draggedIndex = currentOrder.indexOf(draggedStatId);
+                const targetIndex = currentOrder.indexOf(targetStatId);
+                
+                if (draggedIndex !== -1 && targetIndex !== -1) {
+                  // 两个气泡互换位置
+                  const temp = currentOrder[draggedIndex];
+                  currentOrder[draggedIndex] = currentOrder[targetIndex];
+                  currentOrder[targetIndex] = temp;
+                  
+                  // 保存新顺序（静默保存，不刷新页面）
+                  this.settings.statOrder = currentOrder;
+                  this.saveSettingsSilent();
+                  
+                  // 只交换两个气泡的位置，避免全局重新渲染
+                  const allBubbles = Array.from(statsContainer.querySelectorAll('.about-blank-stats-bubble')) as HTMLElement[];
+                  const draggedBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === draggedStatId);
+                  const targetBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === targetStatId);
+                  
+                  if (draggedBubble && targetBubble) {
+                    // 交换两个气泡的位置
+                    const draggedTop = (draggedBubble as HTMLElement).style.top;
+                    const targetTop = (targetBubble as HTMLElement).style.top;
+                    
+                    // 交换位置
+                    (draggedBubble as HTMLElement).style.top = targetTop;
+                    (targetBubble as HTMLElement).style.top = draggedTop;
+                    
+                    // 交换左右类名
+                    const draggedHasLeft = draggedBubble.classList.contains('about-blank-stats-bubble-left');
+                    const targetHasLeft = targetBubble.classList.contains('about-blank-stats-bubble-left');
+                    
+                    if (draggedHasLeft !== targetHasLeft) {
+                      if (draggedHasLeft) {
+                        draggedBubble.classList.remove('about-blank-stats-bubble-left');
+                        draggedBubble.classList.add('about-blank-stats-bubble-right');
+                        targetBubble.classList.remove('about-blank-stats-bubble-right');
+                        targetBubble.classList.add('about-blank-stats-bubble-left');
+                      } else {
+                        draggedBubble.classList.remove('about-blank-stats-bubble-right');
+                        draggedBubble.classList.add('about-blank-stats-bubble-left');
+                        targetBubble.classList.remove('about-blank-stats-bubble-left');
+                        targetBubble.classList.add('about-blank-stats-bubble-right');
+                      }
+                    }
+                    
+                    // 添加交换动画效果
+                    draggedBubble.style.transition = 'top 0.3s ease';
+                    targetBubble.style.transition = 'top 0.3s ease';
+                    
+                    // 移除过渡效果
+                    setTimeout(() => {
+                      draggedBubble.style.transition = '';
+                      targetBubble.style.transition = '';
+                    }, 300);
+                  }
+                }
+              }
+            });
+          });
+        });
+      };
+      
+      // 导出防抖渲染函数
+      const renderStatsInAllLeaves = debouncedRender;
+      
+      // 优化的智能等待渲染函数
+      let waitTimeout: NodeJS.Timeout | null = null;
+      const waitForReadyAndRender = (retryCount = 0) => {
+        if (retryCount > 5) return; // 减少重试次数
+        
+        // 检查是否有至少一个完全准备好的容器
+        const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
+        if (emptyLeaves.length === 0) return;
+        
+        let hasReadyContainer = false;
+        
+        for (let i = 0; i < emptyLeaves.length; i++) {
+          const leaf = emptyLeaves[i];
+          const container = leaf.querySelector('.empty-state-container');
+          if (container && container.querySelector('.empty-state-action-list')) {
+            hasReadyContainer = true;
+            break;
+          }
+        }
+        
+        if (hasReadyContainer) {
+          // 容器已准备好，进行渲染
+          renderStatsInAllLeaves();
+        } else {
+          // 容器未准备好，等待后重试
+          waitTimeout = setTimeout(() => waitForReadyAndRender(retryCount + 1), 200); // 增加等待时间
+        }
+      };
+      
+      // 开始智能等待渲染
+      waitForReadyAndRender();
+      
+      // 设置全局统计渲染函数，供后续调用
+      (this as any).globalRenderStats = renderStatsInAllLeaves;
+      
+    } catch (error) {
+      loggerOnError(error, "渲染统计气泡失败\n(About Blank)");
+    }
+  };
+
   changeHeatmapYear = (heatmapContainer: HTMLElement, newYear: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
-    // 重新生成新年份的数据
-    const newDateCountMap: { [key: string]: number } = {};
-    const dataSource = this.settings.heatmapDataSource;
-    const frontmatterField = this.settings.heatmapFrontmatterField;
-    
-    // 使用 UTC 日期避免时区问题
-    const startDate = new Date(Date.UTC(newYear, 0, 1));
-    const endDate = new Date(Date.UTC(newYear, 11, 31));
-    
-    // 获取所有markdown文件
-    const markdownFiles = this.app.vault.getMarkdownFiles();
-    
-    // 初始化全年日期
-    const currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      newDateCountMap[dateStr] = 0;
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    // 检查是否已经有该年份的缓存数据
+    if (!(this as any).heatmapYearCache) {
+      (this as any).heatmapYearCache = {};
     }
     
-    // 统计文件
-    for (const file of markdownFiles) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      let fileDate: Date | null = null;
+    const yearCache = (this as any).heatmapYearCache;
+    
+    if (!yearCache[newYear]) {
+      // 重新生成新年份的数据
+      const newDateCountMap: { [key: string]: number } = {};
+      const dataSource = this.settings.heatmapDataSource;
+      const frontmatterField = this.settings.heatmapFrontmatterField;
       
-      if (dataSource === "fileCreation" && file.stat) {
-        fileDate = new Date(file.stat.ctime);
-      } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
-        const dateValue = cache.frontmatter[frontmatterField];
-        if (dateValue) {
-          const parsedDate = new Date(dateValue);
-          if (!isNaN(parsedDate.getTime())) {
-            fileDate = parsedDate;
+      // 使用 UTC 日期避免时区问题
+      const startDate = new Date(Date.UTC(newYear, 0, 1));
+      const endDate = new Date(Date.UTC(newYear, 11, 31));
+      
+      // 获取所有markdown文件
+      const markdownFiles = this.app.vault.getMarkdownFiles();
+      
+      // 初始化全年日期
+      const currentDate = new Date(startDate);
+      while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        newDateCountMap[dateStr] = 0;
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      }
+      
+      // 统计文件
+      for (const file of markdownFiles) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        let fileDate: Date | null = null;
+        
+        if (dataSource === "fileCreation" && file.stat) {
+          fileDate = new Date(file.stat.ctime);
+        } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
+          const dateValue = cache.frontmatter[frontmatterField];
+          if (dateValue) {
+            const parsedDate = new Date(dateValue);
+            if (!isNaN(parsedDate.getTime())) {
+              fileDate = parsedDate;
+            }
+          }
+        }
+        
+        if (fileDate && !isNaN(fileDate.getTime())) {
+          const utcFileDate = new Date(Date.UTC(
+            fileDate.getFullYear(),
+            fileDate.getMonth(),
+            fileDate.getDate()
+          ));
+          const dateStr = utcFileDate.toISOString().split('T')[0];
+          
+          if (utcFileDate.getUTCFullYear() === newYear) {
+            newDateCountMap[dateStr] = (newDateCountMap[dateStr] || 0) + 1;
           }
         }
       }
       
-      if (fileDate && !isNaN(fileDate.getTime())) {
-        const utcFileDate = new Date(Date.UTC(
-          fileDate.getFullYear(),
-          fileDate.getMonth(),
-          fileDate.getDate()
-        ));
-        const dateStr = utcFileDate.toISOString().split('T')[0];
-        
-        if (utcFileDate.getUTCFullYear() === newYear) {
-          newDateCountMap[dateStr] = (newDateCountMap[dateStr] || 0) + 1;
-        }
-      }
+      // 缓存新年份数据
+      yearCache[newYear] = newDateCountMap;
     }
     
     // 清空热力图容器
     heatmapContainer.empty();
     
-    // 重新创建热力图内容
-    this.createHeatmapContent(heatmapContainer, newYear, colorSegments, newDateCountMap);
+    // 使用缓存的数据重新创建热力图内容
+    this.createHeatmapContent(heatmapContainer, newYear, colorSegments, yearCache[newYear]);
   };
 
   createHeatmapContent = (heatmapContainer: HTMLElement, year: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
@@ -1146,21 +1626,28 @@ export default class AboutBlank extends Plugin {
       root.style.setProperty('--about-blank-logo-size', logoSize);
       // 设置Logo大小
       
-      // Set logo position
-      root.style.setProperty('--about-blank-logo-position', this.settings.logoPosition);
+      // Set logo position (固定为top)
+      root.style.setProperty('--about-blank-logo-position', 'top');
       
       // Update container class for positioning and style
       const emptyContainers = document.querySelectorAll('.workspace-leaf-content[data-type="empty"] .empty-state-container');
       emptyContainers.forEach(container => {
         // Remove existing position and style classes
-        container.classList.remove('logo-top', 'logo-center', 'logo-bottom', 'logo-mask', 'logo-original');
+        container.classList.remove('logo-top', 'logo-mask', 'logo-original');
         
         // Add new position and style classes if logo is enabled
         if (this.settings.logoEnabled) {
-          container.classList.add(`logo-${this.settings.logoPosition}`);
+          container.classList.add('logo-top');
           container.classList.add(`logo-${this.settings.logoStyle || 'mask'}`);
         }
       });
+      
+      // Create stats bubbles if logo and stats are enabled
+      if (this.settings.logoEnabled && this.settings.showStats) {
+        setTimeout(() => {
+          this.createStatsBubbles();
+        }, 150);
+      }
       
       // Force a reflow to ensure styles are applied
       setTimeout(() => {
@@ -1369,6 +1856,290 @@ export default class AboutBlank extends Plugin {
     } catch (error) {
       loggerOnError(error, "文件选择失败\n(About Blank)");
       new Notice("文件选择失败", 3000);
+      return null;
+    }
+  }
+
+  async showFolderSelectionDialog(): Promise<string | null> {
+    try {
+      // 获取所有文件夹
+      const files = this.app.vault.getAllLoadedFiles();
+      const folders = files.filter(file => file instanceof TFolder) as TFolder[];
+      
+      // 创建文件夹选择器
+      const modal = new Modal(this.app);
+      
+      // 设置模态框样式，参考React组件的设计
+      modal.modalEl.style.width = '500px';
+      modal.modalEl.style.maxWidth = '90vw';
+      modal.modalEl.style.borderRadius = '8px';
+      
+      // 创建头部
+      const headerEl = modal.contentEl.createEl('div', { cls: 'about-blank-folder-selector-header' });
+      headerEl.createEl('h3', { text: '选择文件夹' });
+      
+      // 添加搜索框
+      const searchContainer = modal.contentEl.createEl('div', { cls: 'about-blank-folder-search-container' });
+      const searchInput = searchContainer.createEl('input', { 
+        type: 'text',
+        placeholder: '搜索文件夹...',
+        cls: 'about-blank-folder-search-input'
+      });
+      
+      const listEl = modal.contentEl.createEl('div', { cls: 'about-blank-folder-list' });
+      
+      if (folders.length === 0) {
+        const emptyEl = listEl.createEl('div', { cls: 'about-blank-folder-empty' });
+        const iconContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-icon' });
+        setIcon(iconContainer, 'folder-x');
+        const textContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-text' });
+        textContainer.textContent = '未找到任何文件夹';
+      }
+      
+      // 添加样式，参考React组件的设计风格
+      modal.contentEl.createEl('style', { text: `
+        .about-blank-folder-selector-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--background-modifier-border);
+        }
+        
+        .about-blank-folder-selector-header h3 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--text-normal);
+        }
+        
+        .about-blank-folder-search-container {
+          padding: 12px 20px;
+          border-bottom: 1px solid var(--background-modifier-border);
+        }
+        
+        .about-blank-folder-search-input {
+          width: 100%;
+          padding: 8px 12px;
+          border: 1px solid var(--background-modifier-border);
+          border-radius: 4px;
+          background-color: var(--background-primary);
+          color: var(--text-normal);
+          font-size: 14px;
+          outline: none;
+          transition: border-color 0.2s ease;
+        }
+        
+        .about-blank-folder-search-input:focus {
+          border-color: var(--interactive-accent);
+        }
+        
+        .about-blank-folder-list {
+          max-height: 300px;
+          overflow-y: auto;
+          padding: 8px 0;
+        }
+        
+        .about-blank-folder-item {
+          padding: 10px 20px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          transition: background-color 0.2s ease;
+          border-bottom: 1px solid transparent;
+        }
+        
+        .about-blank-folder-item:hover {
+          background: var(--background-modifier-hover);
+        }
+        
+        .about-blank-folder-item.selected {
+          background: var(--interactive-accent);
+          color: var(--text-on-accent);
+        }
+        
+        .about-blank-folder-item.selected .about-blank-folder-path {
+          color: var(--text-on-accent);
+          opacity: 0.8;
+        }
+        
+        .about-blank-folder-icon {
+          font-size: 16px;
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        
+        .about-blank-folder-info {
+          flex: 1;
+          min-width: 0;
+        }
+        
+        .about-blank-folder-name {
+          font-size: 14px;
+          font-weight: 500;
+          color: inherit;
+          margin-bottom: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        
+        .about-blank-folder-path {
+          font-size: 12px;
+          color: var(--text-muted);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        
+        .about-blank-folder-empty {
+          padding: 40px 20px;
+          text-align: center;
+          color: var(--text-muted);
+          font-size: 14px;
+        }
+        
+        .about-blank-empty-icon {
+          font-size: 48px;
+          margin-bottom: 16px;
+          opacity: 0.5;
+          color: var(--text-muted);
+        }
+        
+        .about-blank-empty-text {
+          font-size: 16px;
+          margin-bottom: 8px;
+          color: var(--text-muted);
+        }
+        
+        .about-blank-empty-hint {
+          font-size: 12px;
+          margin-top: 8px;
+          opacity: 0.7;
+          color: var(--text-muted);
+        }
+        
+        /* 滚动条样式 */
+        .about-blank-folder-list::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        .about-blank-folder-list::-webkit-scrollbar-track {
+          background: var(--background-primary);
+        }
+        
+        .about-blank-folder-list::-webkit-scrollbar-thumb {
+          background: var(--background-modifier-border);
+          border-radius: 3px;
+        }
+        
+        .about-blank-folder-list::-webkit-scrollbar-thumb:hover {
+          background: var(--background-modifier-border-hover);
+        }
+      `});
+      
+      let selectedPath: string | null = null;
+      
+      // 存储所有文件夹元素用于搜索
+      const allFolderItems: HTMLElement[] = [];
+      
+      if (folders.length === 0) {
+        const emptyEl = listEl.createEl('div', { cls: 'about-blank-folder-empty' });
+        const iconContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-icon' });
+        setIcon(iconContainer, 'folder-x');
+        const textContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-text' });
+        textContainer.textContent = '未找到任何文件夹';
+      }
+      
+      // 创建文件夹列表，参考React组件的设计
+      for (const folder of folders) {
+        const itemEl = listEl.createEl('div', { cls: 'about-blank-folder-item' });
+        
+        // 存储文件夹信息用于搜索
+        (itemEl as any).folderPath = folder.path;
+        (itemEl as any).folderName = folder.name.toLowerCase();
+        
+        // 添加文件夹图标
+        const iconEl = itemEl.createEl('div', { cls: 'about-blank-folder-icon' });
+        setIcon(iconEl, 'folder');
+        
+        // 添加文件夹信息容器
+        const infoEl = itemEl.createEl('div', { cls: 'about-blank-folder-info' });
+        
+        // 添加文件夹名
+        const nameEl = infoEl.createEl('div', { cls: 'about-blank-folder-name' });
+        nameEl.textContent = folder.name;
+        
+        // 添加路径
+        const pathEl = infoEl.createEl('div', { cls: 'about-blank-folder-path' });
+        pathEl.textContent = folder.path;
+        
+        // 添加点击事件
+        itemEl.addEventListener('click', () => {
+          // 移除之前的选中状态
+          document.querySelectorAll('.about-blank-folder-item.selected').forEach(el => {
+            el.classList.remove('selected');
+          });
+          
+          // 添加选中状态
+          itemEl.classList.add('selected');
+          selectedPath = folder.path;
+          
+          // 延迟关闭模态框，让用户看到选中效果
+          setTimeout(() => {
+            modal.close();
+          }, 200);
+        });
+        
+        allFolderItems.push(itemEl);
+      }
+      
+      // 添加搜索功能
+      searchInput.addEventListener('input', (e) => {
+        const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
+        let visibleCount = 0;
+        
+        allFolderItems.forEach(item => {
+          const folderName = (item as any).folderName;
+          const folderPath = (item as any).folderPath.toLowerCase();
+          const shouldShow = !searchTerm || folderName.includes(searchTerm) || folderPath.includes(searchTerm);
+          item.style.display = shouldShow ? 'flex' : 'none';
+          if (shouldShow) visibleCount++;
+        });
+        
+        // 显示或隐藏空状态
+        let emptyEl = listEl.querySelector('.about-blank-folder-empty') as HTMLElement;
+        if (visibleCount === 0 && !emptyEl) {
+          emptyEl = listEl.createEl('div', { cls: 'about-blank-folder-empty' });
+          const iconContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-icon' });
+          setIcon(iconContainer, 'search-x');
+          const textContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-text' });
+          textContainer.textContent = '未找到匹配的文件夹';
+          const hintContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-hint' });
+          hintContainer.textContent = '尝试使用不同的关键词搜索';
+        } else if (visibleCount > 0 && emptyEl) {
+          emptyEl.remove();
+        }
+      });
+      
+      // 聚焦搜索框
+      setTimeout(() => {
+        searchInput.focus();
+      }, 100);
+      
+      // 打开模态框
+      return new Promise((resolve) => {
+        modal.onClose = () => {
+          // 模态框关闭，保存选择的路径
+          resolve(selectedPath);
+        };
+        modal.open();
+      });
+    } catch (error) {
+      loggerOnError(error, "文件夹选择失败\n(About Blank)");
+      new Notice("文件夹选择失败", 3000);
       return null;
     }
   }

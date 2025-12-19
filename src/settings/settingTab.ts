@@ -63,11 +63,19 @@ export interface AboutBlankSettings {
   logoDirectory: string;
   logoStyle: string;
   logoSize: number;
-  logoPosition: string;
+  
+  showStats: boolean;
+  obsidianStartDate: string;
   heatmapEnabled: boolean;
   heatmapDataSource: string;
   heatmapFrontmatterField: string;
   heatmapColorSegments: Array<{min: number, max: number, color: string}>;
+  customStats: Array<{
+    type: "folder" | "fileType";
+    value: string;
+    displayName: string;
+  }>;
+  statOrder: string[];
   actions: Action[];
 }
 
@@ -85,7 +93,9 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoDirectory: "",
   logoStyle: "mask",
   logoSize: 40,
-  logoPosition: "top",
+  
+  showStats: false,
+  obsidianStartDate: "",
   heatmapEnabled: false,
   heatmapDataSource: "frontmatter",
   heatmapFrontmatterField: "created",
@@ -96,6 +106,8 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
     { min: 6, max: 9, color: "#30a14e" },
     { min: 10, max: 999, color: "#216e39" }
   ],
+  customStats: [],
+  statOrder: [],
   actions: [],
 } as const;
 
@@ -165,10 +177,19 @@ export const settingsPropTypeCheck: {
       typeof segment.min === "number" && typeof segment.max === "number" && typeof segment.color === "string"
     );
   },
-  logoPosition: (value: unknown) => {
-    const correctValues: unknown[] = ["top", "center", "bottom"];
-    return correctValues.includes(value);
+  customStats: (value: unknown) => {
+    return Array.isArray(value) && value.every(stat => 
+      typeof stat === "object" && stat !== null &&
+      typeof stat.type === "string" && ["folder", "fileType"].includes(stat.type) &&
+      typeof stat.value === "string" &&
+      typeof stat.displayName === "string"
+    );
   },
+  statOrder: (value: unknown) => {
+    return Array.isArray(value) && value.every(item => typeof item === "string");
+  },
+  showStats: (value: unknown) => isBool(value),
+  obsidianStartDate: (value: unknown) => typeof value === "string",
   actions: (value: unknown) => Array.isArray(value),
 };
 
@@ -203,6 +224,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       this.makeSettingsAddActions();
       this.makeSettingsQuickActions();
       this.makeSettingsLogo();
+      this.makeSettingsStats();
       this.makeSettingsHeatmap();
       makeSettingsActionsHeader(
         this.containerEl,
@@ -513,7 +535,235 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               });
           });
 
+        
       
+    }
+  };
+
+  private makeSettingsStats = (): void => {
+    new Setting(this.containerEl)
+      .setHeading()
+      .setName("统计设置")
+      .setDesc("配置Logo周围的统计气泡显示");
+    
+    // 统计气泡开关
+    new Setting(this.containerEl)
+      .setName("显示统计气泡")
+      .setDesc("在Logo周围显示文件统计信息气泡")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.showStats)
+          .onChange(async (value) => {
+            try {
+              this.plugin.settings.showStats = value;
+              await this.plugin.saveSettings();
+              this.plugin.applyStatsSettings();
+              // 重新渲染设置页面以显示/隐藏相关设置
+              this.display();
+            } catch (error) {
+              loggerOnError(error, "设置中出现错误\n(About Blank)");
+            }
+          });
+      });
+
+    if (this.plugin.settings.showStats) {
+      // Obsidian 开始使用日期
+      let obsidianStartDateInput: TextComponent;
+      new Setting(this.containerEl)
+        .setName("Obsidian 开始使用日期")
+        .setDesc("用于计算使用天数和统计信息")
+        .addText((text) => {
+          obsidianStartDateInput = text;
+          text
+            .setPlaceholder("例如: 2020-01-01")
+            .setValue(this.plugin.settings.obsidianStartDate)
+            .onChange(async (value) => {
+              try {
+                this.plugin.settings.obsidianStartDate = value;
+                // 不在这里调用saveSettings，避免输入框退出
+              } catch (error) {
+                loggerOnError(error, "设置中出现错误\n(About Blank)");
+              }
+            });
+            
+          // 添加输入框失焦保存
+          obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
+            try {
+              await this.plugin.saveSettings();
+              this.plugin.applyStatsSettings();
+            } catch (error) {
+              loggerOnError(error, "设置中出现错误\n(About Blank)");
+            }
+          });
+        });
+      // 自定义统计项目设置
+      new Setting(this.containerEl)
+        .setName("自定义统计项目")
+        .setDesc("配置要显示的统计信息，支持文件夹、标签和文件类型统计");
+
+      // 创建一个容器来包裹动态的统计项目设置
+      const statsContainer = this.containerEl.createEl('div', { cls: 'about-blank-stats-container' });
+
+      // 渲染现有统计项目
+      const renderStatsList = () => {
+        // 清空容器而不是移除所有设置项
+        statsContainer.empty();
+        
+        if (this.plugin.settings.customStats.length === 0) {
+          const emptyState = statsContainer.createEl('div', { 
+            cls: 'setting-item-description'
+          });
+          emptyState.style.marginTop = '-10px';
+          emptyState.style.marginBottom = '15px';
+          emptyState.style.color = 'var(--text-muted)';
+          emptyState.textContent = '暂无自定义统计项目，点击下方按钮添加';
+          return;
+        }
+        
+        this.plugin.settings.customStats.forEach((stat, index) => {
+          const settingItem = new Setting(statsContainer)
+            .setClass('about-blank-custom-stat-setting');
+          
+          settingItem.setName(`统计项目 ${index + 1}`);
+          
+          // 类型选择
+          settingItem.addDropdown((dropdown) => {
+            dropdown
+              .addOption("folder", "文件夹")
+              .addOption("fileType", "文件类型")
+              .setValue(stat.type)
+              .onChange(async (value: "folder" | "fileType") => {
+                try {
+                  this.plugin.settings.customStats[index].type = value;
+                  await this.plugin.saveSettings();
+                  renderStatsList();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+          
+          // 值输入或选择
+          if (stat.type === 'folder') {
+            settingItem.addText((text) => {
+              text
+                .setPlaceholder("点击选择文件夹")
+                .setValue(stat.value || "点击选择文件夹")
+                .onChange(async (value) => {
+                  // 防止直接输入，只响应选择操作
+                  if (value !== stat.value) {
+                    text.setValue(stat.value || "点击选择文件夹");
+                  }
+                });
+              
+              // 保持输入框默认样式，只添加点击事件
+              const inputEl = text.inputEl;
+              inputEl.style.cursor = 'pointer';
+              
+              // 添加点击事件
+              inputEl.addEventListener('click', async () => {
+                try {
+                  const selectedPath = await this.plugin.showFolderSelectionDialog();
+                  if (selectedPath) {
+                    this.plugin.settings.customStats[index].value = selectedPath;
+                    await this.plugin.saveSettings();
+                    inputEl.value = selectedPath;
+                  }
+                } catch (error) {
+                  loggerOnError(error, "文件夹选择失败\n(About Blank)");
+                  new Notice("文件夹选择失败，请手动输入文件夹路径", 5000);
+                }
+              });
+            });
+          } else if (stat.type === 'fileType') {
+            settingItem.addText((text) => {
+              text
+                .setPlaceholder("文件扩展名")
+                .setValue(stat.value)
+                .onChange(async (value) => {
+                  try {
+                    this.plugin.settings.customStats[index].value = value;
+                    // 不在这里调用saveSettings，避免输入框退出
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
+                  }
+                });
+              
+              // 添加输入框失焦保存
+              text.inputEl.addEventListener('blur', async () => {
+                try {
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+            });
+          }
+          
+          // 显示名称输入
+          settingItem.addText((text) => {
+            text
+              .setPlaceholder("显示名称")
+              .setValue(stat.displayName)
+              .onChange(async (value) => {
+                try {
+                  this.plugin.settings.customStats[index].displayName = value;
+                  // 不在这里调用saveSettings，避免输入框退出
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+              
+            // 添加输入框失焦保存
+            text.inputEl.addEventListener('blur', async () => {
+              try {
+                await this.plugin.saveSettings();
+              } catch (error) {
+                loggerOnError(error, "设置中出现错误\n(About Blank)");
+              }
+            });
+          });
+          
+          // 删除按钮
+          settingItem.addButton((button) => {
+            button
+              .setButtonText("删除")
+              .setCta()
+              .onClick(async () => {
+                try {
+                  this.plugin.settings.customStats.splice(index, 1);
+                  await this.plugin.saveSettings();
+                  renderStatsList();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+        });
+      };
+      
+      renderStatsList();
+      
+      // 添加新统计项目按钮
+      new Setting(this.containerEl)
+        .addButton((button) => {
+          button
+            .setButtonText("+ 添加统计项目")
+            .setCta()
+            .onClick(async () => {
+              try {
+                this.plugin.settings.customStats.push({
+                  type: 'folder',
+                  value: '',
+                  displayName: ''
+                });
+                await this.plugin.saveSettings();
+                renderStatsList();
+              } catch (error) {
+                loggerOnError(error, "设置中出现错误\n(About Blank)");
+              }
+            });
+        });
     }
   };
 
@@ -592,16 +842,18 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       zeroSegmentDesc.style.marginBottom = '10px';
       zeroSegmentDesc.style.color = 'var(--text-muted)';
 
+      // 创建一个容器来包裹动态的颜色分段设置
+      const colorSegmentsContainer = this.containerEl.createEl('div', { cls: 'about-blank-color-segments-container' });
+
       // 渲染颜色分段设置（跳过零值分段）
       const renderColorSegments = () => {
-        // 先移除现有的分段设置（除了标题和零值提示）
-        const existingSettings = this.containerEl.querySelectorAll('.about-blank-color-segment-setting');
-        existingSettings.forEach(setting => setting.remove());
+        // 清空容器而不是移除所有设置项
+        colorSegmentsContainer.empty();
         
         // 从索引1开始，跳过零值分段
         for (let i = 1; i < this.plugin.settings.heatmapColorSegments.length; i++) {
           const segment = this.plugin.settings.heatmapColorSegments[i];
-          const settingItem = new Setting(this.containerEl)
+          const settingItem = new Setting(colorSegmentsContainer)
             .setClass('about-blank-color-segment-setting');
           
           settingItem
@@ -613,11 +865,20 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                   try {
                     this.plugin.settings.heatmapColorSegments[i].min = parseInt(value) || 0;
-                    await this.plugin.saveSettings();
+                    // 不在这里调用saveSettings，避免输入框退出
                   } catch (error) {
                     loggerOnError(error, "设置中出现错误\n(About Blank)");
                   }
                 });
+              
+              // 添加输入框失焦保存
+              text.inputEl.addEventListener('blur', async () => {
+                try {
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
             })
             .addText((text) => {
               text
@@ -626,11 +887,20 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                   try {
                     this.plugin.settings.heatmapColorSegments[i].max = parseInt(value) || 0;
-                    await this.plugin.saveSettings();
+                    // 不在这里调用saveSettings，避免输入框退出
                   } catch (error) {
                     loggerOnError(error, "设置中出现错误\n(About Blank)");
                   }
                 });
+              
+              // 添加输入框失焦保存
+              text.inputEl.addEventListener('blur', async () => {
+                try {
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
             })
             .addColorPicker((colorPicker) => {
               colorPicker

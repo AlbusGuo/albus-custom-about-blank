@@ -345,38 +345,10 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   max-height: none;
 }
 
-/** - Logo position variations for both styles */
+/** - Logo position variations (仅支持top位置) */
 .workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top.logo-mask::before,
 .workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top.logo-original::before {
   margin-bottom: 8px;
-}
-
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-center.logo-mask::before,
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-center.logo-original::before {
-  position: absolute;
-  top: 40%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  z-index: 1;
-}
-
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-bottom.logo-mask::before,
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-bottom.logo-original::before {
-  margin-top: 8px;
-  order: 2;
-}
-
-/** - Logo container adjustments */
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-center {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  height: 100vh;
-  max-height: none;
 }
 
 /** - Ensure logo is visible */
@@ -395,8 +367,7 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
 }
 
 /** - Ensure logo containers can accommodate large logos */
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top,
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-bottom {
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
   min-height: 100vh;
   max-height: none;
   height: auto;
@@ -412,10 +383,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
 
 .workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
   flex-direction: column;
-}
-
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-bottom {
-  flex-direction: column-reverse;
 }
 
 /** ## Heatmap Styles */
@@ -639,6 +606,175 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before
   .about-blank-heatmap-legend-color {
     width: 10px;
     height: 10px;
+  }
+}
+
+/** ## Stats Bubbles */
+
+.about-blank-stats-bubbles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.about-blank-stats-bubble-left,
+.about-blank-stats-bubble-right {
+  position: absolute;
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: auto;
+  transition: all 0.2s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+  opacity: 0.9;
+  max-width: 150px;
+  text-align: center;
+}
+
+/* 对话气泡的尾巴 */
+.about-blank-stats-bubble-left::after,
+.about-blank-stats-bubble-right::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.about-blank-stats-bubble-left::after {
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 8px 0 8px 8px;
+  border-color: transparent transparent transparent var(--background-secondary-alt);
+}
+
+.about-blank-stats-bubble-right::after {
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 8px 8px 8px 0;
+  border-color: transparent var(--background-secondary-alt) transparent transparent;
+}
+
+/* 气泡尾巴的边框 */
+.about-blank-stats-bubble-left::before,
+.about-blank-stats-bubble-right::before {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  z-index: -1;
+}
+
+.about-blank-stats-bubble-left::before {
+  right: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 9px 0 9px 9px;
+  border-color: transparent transparent transparent var(--background-modifier-border);
+}
+
+.about-blank-stats-bubble-right::before {
+  left: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 9px 9px 9px 0;
+  border-color: transparent var(--background-modifier-border) transparent transparent;
+}
+
+.about-blank-stats-bubble-left:hover,
+.about-blank-stats-bubble-right:hover {
+  opacity: 1;
+  transform: scale(1.05);
+  z-index: 3;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* 调整气泡位置，使其围绕Logo */
+.about-blank-stats-bubble-left {
+  right: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+}
+
+.about-blank-stats-bubble-right {
+  left: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+}
+
+.about-blank-stats-bubble-label {
+  font-weight: 500;
+  color: var(--text-accent);
+  margin-right: 4px;
+  font-size: 11px;
+}
+
+.about-blank-stats-bubble-value {
+  font-weight: 600;
+  color: var(--text-normal);
+  font-size: 13px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .about-blank-stats-bubble-left,
+  .about-blank-stats-bubble-right {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  
+  .about-blank-stats-bubble-left {
+    right: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+  }
+  
+  .about-blank-stats-bubble-right {
+    left: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+  }
+}
+
+/* 拖拽相关样式 */
+.about-blank-stats-bubble-left,
+.about-blank-stats-bubble-right {
+  cursor: grab;
+}
+
+.about-blank-stats-bubble-left:active,
+.about-blank-stats-bubble-right:active {
+  cursor: grabbing;
+}
+
+.about-blank-stats-bubble-dragging {
+  opacity: 0.6;
+  transform: scale(0.95);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+.about-blank-stats-bubble-drag-over {
+  border: 2px dashed var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+}
+
+@media (max-width: 480px) {
+  .about-blank-stats-bubble-left,
+  .about-blank-stats-bubble-right {
+    font-size: 9px;
+    padding: 2px 4px;
+  }
+  
+  .about-blank-stats-bubble-left {
+    right: calc(50% + var(--about-blank-logo-size) / 2 + 10px);
+  }
+  
+  .about-blank-stats-bubble-right {
+    left: calc(50% + var(--about-blank-logo-size) / 2 + 10px);
   }
 }
 
