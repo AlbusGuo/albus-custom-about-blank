@@ -463,11 +463,7 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
 }
 
 .about-blank-heatmap-cell.empty {
-  background-color: var(--background-secondary);
-}
-
-.theme-dark .about-blank-heatmap-cell.empty {
-  background-color: var(--background-secondary);
+  background-color: var(--background-secondary-alt) !important;
 }
 
 /** - Color segments settings */
