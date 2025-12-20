@@ -65,8 +65,6 @@ import {
   UNSAFE_VIEW_TYPES,
   type UnsafeEmptyView,
 } from "src/unsafe";
-
-import BongoCatManager from "src/ui/bongoCat";
 // =============================================================================
 
 export default class AboutBlank extends Plugin {
@@ -74,7 +72,6 @@ export default class AboutBlank extends Plugin {
   needToResisterActions: boolean;
   needToRemoveActions: boolean;
   needToResisterQuickActions: boolean;
-  bongoCat?: BongoCatManager;
 
   async onload() {
     try {
@@ -105,22 +102,6 @@ export default class AboutBlank extends Plugin {
       }
 
       this.addSettingTab(new AboutBlankSettingTab(this.app, this));
-
-      // Initialize Bongo Cat manager
-      this.bongoCat = new BongoCatManager(this as any);
-      if ((this.settings as any).bongoCatEnabled) {
-        this.bongoCat.mount();
-      }
-
-      // Register command to toggle Bongo Cat
-      this.addCommand({
-        id: 'toggle-bongo-cat',
-        name: 'Toggle Bongo Cat',
-        callback: () => {
-          if (!this.bongoCat) this.bongoCat = new BongoCatManager(this as any);
-          this.bongoCat.toggle();
-        }
-      });
     } catch (error) {
       loggerOnError(error, "插件加载失败\n(About Blank)");
     }
@@ -492,8 +473,7 @@ export default class AboutBlank extends Plugin {
     const defaultSettings = defaultSettingsClone();
     const settingsKeys = Object.keys(defaultSettings) as Array<keyof AboutBlankSettings>;
     settingsKeys.forEach((key) => {
-      const checker = (settingsPropTypeCheck as any)[key];
-      if (typeof checker !== "function" || !checker(this.settings[key])) {
+      if (!settingsPropTypeCheck[key](this.settings[key])) {
         results.push(
           new Map<string, unknown>([
             ["errorType", "settings property type error"],
