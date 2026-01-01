@@ -149,19 +149,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
     margin-bottom: 4px;
 }
 
-/* 可点击格子的悬停效果 */
-.about-blank-heatmap-cell-clickable {
-    cursor: pointer;
-    transition: transform 0.1s ease;
-}
-
-.about-blank-heatmap-cell-clickable:hover {
-    transform: scale(1);
-    opacity: 1 !important;
-    z-index: 2;
-    box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-}
-
 .about-blank-button-container:has(.svg-icon) .about-blank-button {
   padding-left: var(--about-blank-icon-text-gap);
 }

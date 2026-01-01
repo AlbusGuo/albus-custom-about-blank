@@ -631,8 +631,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
             try {
               this.plugin.settings.showStats = value;
               await this.plugin.saveSettings();
-              this.plugin.applyStatsSettings();
-              // 重新渲染设置页面以显示/隐藏相关设置
               this.display();
             } catch (error) {
               loggerOnError(error, "设置中出现错误\n(About Blank)");
@@ -664,7 +662,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
             try {
               await this.plugin.saveSettings();
-              this.plugin.applyStatsSettings();
             } catch (error) {
               loggerOnError(error, "设置中出现错误\n(About Blank)");
             }

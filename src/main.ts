@@ -142,11 +142,8 @@ export default class AboutBlank extends Plugin {
 
   saveSettings = async () => {
     await this.saveData(this.settings);
-    // Apply logo settings
     this.applyLogoSettings();
-    // Apply heatmap settings
     this.applyHeatmapSettings();
-    // Reset all New tabs
     this.closeAllNewTabs();
   };
 
@@ -264,11 +261,8 @@ export default class AboutBlank extends Plugin {
         ? Array.from(emptyActionListEl.children) as HTMLElement[]
         : null;
       this.applyVisibleClass(emptyTitleEl, childElements);
-      // Apply logo settings
       this.applyLogoSettings();
-      // Apply heatmap settings
       this.applyHeatmapSettings();
-      // Additional actions by "About Blank"
       if (!emptyActionListEl || !childElements) {
         return;
       }
@@ -569,29 +563,6 @@ export default class AboutBlank extends Plugin {
       return !isFalsyString(registerId) && !hasDuplicates(cmdIds, registerId);
     } else {
       return cmdIds.every((cmdId) => !isFalsyString(cmdId)) && !hasDuplicates(cmdIds);
-    }
-  };
-
-  applyStatsSettings = (): void => {
-    try {
-      if (this.settings.showStats) {
-        // 创建统计气泡
-        this.createStatsBubbles();
-        
-        // 添加工作区事件监听
-        this.registerWorkspaceEvents();
-      } else {
-        // 移除统计气泡容器
-        const statsContainers = document.querySelectorAll('.about-blank-stats-bubbles');
-        statsContainers.forEach(container => container.remove());
-        
-        // 清除全局渲染函数
-        if ((this as any).globalRenderStats) {
-          (this as any).globalRenderStats = null;
-        }
-      }
-    } catch (error) {
-      loggerOnError(error, "应用统计设置失败\n(About Blank)");
     }
   };
 
@@ -1413,25 +1384,19 @@ export default class AboutBlank extends Plugin {
 
   createHeatmapContent = (heatmapContainer: HTMLElement, year: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
     try {
-      // 找到当前热力图容器所属的标签页
       const parentLeaf = heatmapContainer.closest('.workspace-leaf-content[data-type="empty"]') as HTMLElement;
       
-      // 获取当前标签页的action list的宽度并设置热力图容器宽度
       if (parentLeaf) {
         const actionList = parentLeaf.querySelector('.empty-state-action-list') as HTMLElement;
         if (actionList) {
           const actionListWidth = actionList.offsetWidth;
-          // 设置热力图容器宽度至少与action list一致，但不限制最大宽度
           heatmapContainer.style.width = `${Math.max(actionListWidth, 800)}px`;
           heatmapContainer.style.maxWidth = 'none';
-          // 移除滚动条设置
         }
       }
       
-      // 创建热力图控制容器
       const controlsContainer = heatmapContainer.createEl('div', { cls: 'about-blank-heatmap-controls' });
       
-      // 创建年份切换按钮
       const prevButton = controlsContainer.createEl('button', { cls: 'about-blank-heatmap-year-button about-blank-heatmap-year-prev' });
       prevButton.innerHTML = '‹';
       prevButton.addEventListener('click', () => {
@@ -1447,17 +1412,13 @@ export default class AboutBlank extends Plugin {
         this.changeHeatmapYear(heatmapContainer, year + 1, colorSegments, dateCountMap);
       });
       
-      // 创建热力图容器
       const chartsEl = heatmapContainer.createEl('div', { cls: 'about-blank-heatmap-charts' });
       
-      // 创建星期标签列
       const weekTextColumns = chartsEl.createEl('div', { cls: 'about-blank-heatmap-column' });
       this.renderWeekIndicator(weekTextColumns);
       
-      // 生成贡献数据
       const contributionData = this.generateContributionData(dateCountMap);
       
-      // 填充开始前的空白格子
       if (contributionData.length > 0) {
         const firstDate = new Date(contributionData[0].date);
         const weekDayOfFirstDate = firstDate.getDay();
@@ -1475,23 +1436,19 @@ export default class AboutBlank extends Plugin {
         }
       }
       
-      // 创建热力图列
       let columnEl: HTMLElement | null = null;
       for (let i = 0; i < contributionData.length; i++) {
-        // 每7个格子创建一个新列（一周）
         if (i % 7 === 0) {
           columnEl = chartsEl.createEl('div', { cls: 'about-blank-heatmap-column' });
         }
         
         const contributionItem = contributionData[i];
         
-        // 每月第一天添加月份标签
         if (contributionItem.monthDate === 1 && columnEl) {
           const monthCell = columnEl.createEl('div', { cls: 'about-blank-heatmap-month-indicator' });
           const months = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
           monthCell.textContent = months[contributionItem.month];
           
-          // 确保月份标签精确对齐到1号所在的列
           monthCell.style.position = 'absolute';
           monthCell.style.top = '-24px';
           monthCell.style.left = '0';
@@ -1499,7 +1456,6 @@ export default class AboutBlank extends Plugin {
           monthCell.style.textAlign = 'center';
         }
         
-        // 创建格子
         if (columnEl) {
           const cellEl = columnEl.createEl('div', { cls: 'about-blank-heatmap-cell' });
           
@@ -1510,7 +1466,6 @@ export default class AboutBlank extends Plugin {
               cellEl.setAttribute('data-date', contributionItem.date);
               cellEl.setAttribute('data-count', '0');
               
-              // 根据数量设置颜色
               const color = this.getHeatmapColor(0);
               cellEl.style.backgroundColor = color;
             } else {
@@ -1521,17 +1476,8 @@ export default class AboutBlank extends Plugin {
             cellEl.setAttribute('data-date', contributionItem.date);
             cellEl.setAttribute('data-count', contributionItem.count.toString());
             
-            // 根据数量设置颜色
             const color = this.getHeatmapColor(contributionItem.count);
             cellEl.style.backgroundColor = color;
-            
-            // 添加可点击类名
-            cellEl.addClass('about-blank-heatmap-cell-clickable');
-            
-            // 添加点击事件
-            cellEl.addEventListener('click', () => {
-              this.showHeatmapModal(contributionItem.date, contributionItem.count);
-            });
           }
         }
       }
@@ -1576,13 +1522,6 @@ export default class AboutBlank extends Plugin {
     return colorSegments[0].color;
   };
 
-  
-
-  showHeatmapModal = (dateStr: string, count: number): void => {
-    // 这里可以实现模态框显示该日期的文件列表
-    // 显示文件信息
-  };
-
   applyLogoSettings = (): void => {
     try {
       const root = document.documentElement;
@@ -1615,21 +1554,13 @@ export default class AboutBlank extends Plugin {
         }
         
         root.style.setProperty('--about-blank-logo-image', logoUrl);
-        // 设置Logo URL
       } else {
         root.style.setProperty('--about-blank-logo-image', 'none');
       }
       
-      // Set logo size
       const logoSize = `${this.settings.logoSize}px`;
       root.style.setProperty('--about-blank-logo-size', logoSize);
-      // 设置Logo大小
-      
-      // Set logo opacity
       root.style.setProperty('--about-blank-logo-opacity', this.settings.logoOpacity.toString());
-      // 设置Logo透明度
-      
-      // Set logo position (固定为top)
       root.style.setProperty('--about-blank-logo-position', 'top');
       
       // Update container class for positioning and style
@@ -1665,18 +1596,14 @@ export default class AboutBlank extends Plugin {
   async showFileSelectionDialog(): Promise<string | null> {
     try {
       // 开始文件选择
-      // 使用Obsidian的文件系统API获取所有图片文件
       const files = this.app.vault.getFiles();
-      // 获取文件数量
       
       let imageFiles = files.filter((file: TFile) => 
         file.extension && ['jpg', 'jpeg', 'png', 'gif', 'svg', 'bmp', 'webp'].includes(file.extension)
       );
       
-      // 如果设置了logo文件目录，只显示该目录下的文件
       if (this.settings.logoDirectory && this.settings.logoDirectory.trim()) {
         const logoDir = this.settings.logoDirectory.trim();
-        // 筛选目录
         imageFiles = imageFiles.filter((file: TFile) => 
           file.path.startsWith(logoDir) && (file.path === logoDir || file.path.substring(logoDir.length).startsWith('/'))
         );
