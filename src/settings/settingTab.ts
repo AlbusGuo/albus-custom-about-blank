@@ -408,7 +408,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsLogo = (): void => {
     new Setting(this.containerEl)
       .setHeading()
-      .setName("Logo 设置");
+      .setName("Logo 与统计气泡设置");
 
       
 
@@ -609,233 +609,229 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               });
           });
 
+        // 统计气泡开关（作为 Logo 的子设置）
+        new Setting(this.containerEl)
+          .setName("显示统计气泡")
+          .setDesc("在 Logo 周围显示文件统计信息气泡")
+          .addToggle((toggle) => {
+            toggle
+              .setValue(this.plugin.settings.showStats)
+              .onChange(async (value) => {
+                try {
+                  this.plugin.settings.showStats = value;
+                  await this.plugin.saveSettings();
+                  this.display();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+
+        if (this.plugin.settings.showStats) {
+          // Obsidian 开始使用日期
+          let obsidianStartDateInput: TextComponent;
+          new Setting(this.containerEl)
+            .setName("Obsidian 开始使用日期")
+            .setDesc("用于计算使用 Obsidian 的天数")
+            .addText((text) => {
+              obsidianStartDateInput = text;
+              text
+                .setPlaceholder("例如: 2025-12-19")
+                .setValue(this.plugin.settings.obsidianStartDate)
+                .onChange(async (value) => {
+                  try {
+                    this.plugin.settings.obsidianStartDate = value;
+                    // 不在这里调用saveSettings，避免输入框退出
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
+                  }
+                });
+                
+              // 添加输入框失焦保存
+              obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
+                try {
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+            });
+          // 自定义统计项目设置
+          new Setting(this.containerEl)
+            .setName("自定义统计项目")
+            .setDesc("配置要显示的统计信息, 支持文件夹、标签和文件类型统计");
+
+          // 创建一个容器来包裹动态的统计项目设置
+          const statsContainer = this.containerEl.createEl('div', { cls: 'about-blank-stats-container' });
+
+          // 渲染现有统计项目
+          const renderStatsList = () => {
+            // 清空容器而不是移除所有设置项
+            statsContainer.empty();
+            
+            if (this.plugin.settings.customStats.length === 0) {
+              const emptyState = statsContainer.createEl('div', { 
+                cls: 'setting-item-description'
+              });
+              emptyState.style.marginTop = '-10px';
+              emptyState.style.marginBottom = '15px';
+              emptyState.style.color = 'var(--text-muted)';
+              emptyState.textContent = '暂无自定义统计项目, 点击下方按钮添加';
+              return;
+            }
+            
+            this.plugin.settings.customStats.forEach((stat, index) => {
+              const settingItem = new Setting(statsContainer)
+                .setClass('about-blank-custom-stat-setting');
+              
+              settingItem.setName(`统计项目 ${index + 1}`);
+              
+              // 类型选择
+              settingItem.addDropdown((dropdown) => {
+                dropdown
+                  .addOption("folder", "文件夹")
+                  .addOption("fileType", "文件类型")
+                  .setValue(stat.type)
+                  .onChange(async (value: "folder" | "fileType") => {
+                    try {
+                      this.plugin.settings.customStats[index].type = value;
+                      await this.plugin.saveSettings();
+                      renderStatsList();
+                    } catch (error) {
+                      loggerOnError(error, "设置中出现错误\n(About Blank)");
+                    }
+                  });
+              });
+              
+              // 值输入或选择
+              if (stat.type === 'folder') {
+                settingItem.addText((text) => {
+                  text
+                    .setPlaceholder("点击选择文件夹")
+                    .setValue(stat.value || "点击选择文件夹")
+                    .onChange(async (value) => {
+                      // 防止直接输入，只响应选择操作
+                      if (value !== stat.value) {
+                        text.setValue(stat.value || "点击选择文件夹");
+                      }
+                    });
+                  
+                  // 保持输入框默认样式，只添加点击事件
+                  const inputEl = text.inputEl;
+                  inputEl.style.cursor = 'pointer';
+                  
+                  // 添加点击事件
+                  inputEl.addEventListener('click', async () => {
+                    try {
+                      const selectedPath = await this.plugin.showFolderSelectionDialog();
+                      if (selectedPath) {
+                        this.plugin.settings.customStats[index].value = selectedPath;
+                        await this.plugin.saveSettings();
+                        inputEl.value = selectedPath;
+                      }
+                    } catch (error) {
+                      loggerOnError(error, "文件夹选择失败\n(About Blank)");
+                      new Notice("文件夹选择失败, 请手动输入文件夹路径", 5000);
+                    }
+                  });
+                });
+              } else if (stat.type === 'fileType') {
+                settingItem.addText((text) => {
+                  text
+                    .setPlaceholder("文件扩展名")
+                    .setValue(stat.value)
+                    .onChange(async (value) => {
+                      try {
+                        this.plugin.settings.customStats[index].value = value;
+                        // 不在这里调用saveSettings，避免输入框退出
+                      } catch (error) {
+                        loggerOnError(error, "设置中出现错误\n(About Blank)");
+                      }
+                    });
+                  
+                  // 添加输入框失焦保存
+                  text.inputEl.addEventListener('blur', async () => {
+                    try {
+                      await this.plugin.saveSettings();
+                    } catch (error) {
+                      loggerOnError(error, "设置中出现错误\n(About Blank)");
+                    }
+                  });
+                });
+              }
+              
+              // 显示名称输入
+              settingItem.addText((text) => {
+                text
+                  .setPlaceholder("显示名称")
+                  .setValue(stat.displayName)
+                  .onChange(async (value) => {
+                    try {
+                      this.plugin.settings.customStats[index].displayName = value;
+                      // 不在这里调用saveSettings，避免输入框退出
+                    } catch (error) {
+                      loggerOnError(error, "设置中出现错误\n(About Blank)");
+                    }
+                  });
+                  
+                // 添加输入框失焦保存
+                text.inputEl.addEventListener('blur', async () => {
+                  try {
+                    await this.plugin.saveSettings();
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
+                  }
+                });
+              });
+              
+              // 删除按钮
+              settingItem.addButton((button) => {
+                button
+                  .setButtonText("删除")
+                  .setCta()
+                  .onClick(async () => {
+                    try {
+                      this.plugin.settings.customStats.splice(index, 1);
+                      await this.plugin.saveSettings();
+                      renderStatsList();
+                    } catch (error) {
+                      loggerOnError(error, "设置中出现错误\n(About Blank)");
+                    }
+                  });
+              });
+            });
+          };
+          
+          renderStatsList();
+          
+          // 添加新统计项目按钮
+          new Setting(this.containerEl)
+            .addButton((button) => {
+              button
+                .setButtonText("+ 添加统计项目")
+                .setCta()
+                .onClick(async () => {
+                  try {
+                    this.plugin.settings.customStats.push({
+                      type: 'folder',
+                      value: '',
+                      displayName: ''
+                    });
+                    await this.plugin.saveSettings();
+                    renderStatsList();
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
+                  }
+                });
+            });
+        }
         
       
     }
   };
 
   private makeSettingsStats = (): void => {
-    new Setting(this.containerEl)
-      .setHeading()
-      .setName("统计设置")
-      .setDesc("配置 Logo 周围的统计气泡显示");
-    
-    // 统计气泡开关
-    new Setting(this.containerEl)
-      .setName("显示统计气泡")
-      .setDesc("在 Logo 周围显示文件统计信息气泡")
-      .addToggle((toggle) => {
-        toggle
-          .setValue(this.plugin.settings.showStats)
-          .onChange(async (value) => {
-            try {
-              this.plugin.settings.showStats = value;
-              await this.plugin.saveSettings();
-              this.display();
-            } catch (error) {
-              loggerOnError(error, "设置中出现错误\n(About Blank)");
-            }
-          });
-      });
-
-    if (this.plugin.settings.showStats) {
-      // Obsidian 开始使用日期
-      let obsidianStartDateInput: TextComponent;
-      new Setting(this.containerEl)
-        .setName("Obsidian 开始使用日期")
-        .setDesc("用于计算使用 Obsidian 的天数")
-        .addText((text) => {
-          obsidianStartDateInput = text;
-          text
-            .setPlaceholder("例如: 2025-12-19")
-            .setValue(this.plugin.settings.obsidianStartDate)
-            .onChange(async (value) => {
-              try {
-                this.plugin.settings.obsidianStartDate = value;
-                // 不在这里调用saveSettings，避免输入框退出
-              } catch (error) {
-                loggerOnError(error, "设置中出现错误\n(About Blank)");
-              }
-            });
-            
-          // 添加输入框失焦保存
-          obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
-            try {
-              await this.plugin.saveSettings();
-            } catch (error) {
-              loggerOnError(error, "设置中出现错误\n(About Blank)");
-            }
-          });
-        });
-      // 自定义统计项目设置
-      new Setting(this.containerEl)
-        .setName("自定义统计项目")
-        .setDesc("配置要显示的统计信息, 支持文件夹、标签和文件类型统计");
-
-      // 创建一个容器来包裹动态的统计项目设置
-      const statsContainer = this.containerEl.createEl('div', { cls: 'about-blank-stats-container' });
-
-      // 渲染现有统计项目
-      const renderStatsList = () => {
-        // 清空容器而不是移除所有设置项
-        statsContainer.empty();
-        
-        if (this.plugin.settings.customStats.length === 0) {
-          const emptyState = statsContainer.createEl('div', { 
-            cls: 'setting-item-description'
-          });
-          emptyState.style.marginTop = '-10px';
-          emptyState.style.marginBottom = '15px';
-          emptyState.style.color = 'var(--text-muted)';
-          emptyState.textContent = '暂无自定义统计项目, 点击下方按钮添加';
-          return;
-        }
-        
-        this.plugin.settings.customStats.forEach((stat, index) => {
-          const settingItem = new Setting(statsContainer)
-            .setClass('about-blank-custom-stat-setting');
-          
-          settingItem.setName(`统计项目 ${index + 1}`);
-          
-          // 类型选择
-          settingItem.addDropdown((dropdown) => {
-            dropdown
-              .addOption("folder", "文件夹")
-              .addOption("fileType", "文件类型")
-              .setValue(stat.type)
-              .onChange(async (value: "folder" | "fileType") => {
-                try {
-                  this.plugin.settings.customStats[index].type = value;
-                  await this.plugin.saveSettings();
-                  renderStatsList();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
-              });
-          });
-          
-          // 值输入或选择
-          if (stat.type === 'folder') {
-            settingItem.addText((text) => {
-              text
-                .setPlaceholder("点击选择文件夹")
-                .setValue(stat.value || "点击选择文件夹")
-                .onChange(async (value) => {
-                  // 防止直接输入，只响应选择操作
-                  if (value !== stat.value) {
-                    text.setValue(stat.value || "点击选择文件夹");
-                  }
-                });
-              
-              // 保持输入框默认样式，只添加点击事件
-              const inputEl = text.inputEl;
-              inputEl.style.cursor = 'pointer';
-              
-              // 添加点击事件
-              inputEl.addEventListener('click', async () => {
-                try {
-                  const selectedPath = await this.plugin.showFolderSelectionDialog();
-                  if (selectedPath) {
-                    this.plugin.settings.customStats[index].value = selectedPath;
-                    await this.plugin.saveSettings();
-                    inputEl.value = selectedPath;
-                  }
-                } catch (error) {
-                  loggerOnError(error, "文件夹选择失败\n(About Blank)");
-                  new Notice("文件夹选择失败, 请手动输入文件夹路径", 5000);
-                }
-              });
-            });
-          } else if (stat.type === 'fileType') {
-            settingItem.addText((text) => {
-              text
-                .setPlaceholder("文件扩展名")
-                .setValue(stat.value)
-                .onChange(async (value) => {
-                  try {
-                    this.plugin.settings.customStats[index].value = value;
-                    // 不在这里调用saveSettings，避免输入框退出
-                  } catch (error) {
-                    loggerOnError(error, "设置中出现错误\n(About Blank)");
-                  }
-                });
-              
-              // 添加输入框失焦保存
-              text.inputEl.addEventListener('blur', async () => {
-                try {
-                  await this.plugin.saveSettings();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
-              });
-            });
-          }
-          
-          // 显示名称输入
-          settingItem.addText((text) => {
-            text
-              .setPlaceholder("显示名称")
-              .setValue(stat.displayName)
-              .onChange(async (value) => {
-                try {
-                  this.plugin.settings.customStats[index].displayName = value;
-                  // 不在这里调用saveSettings，避免输入框退出
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
-              });
-              
-            // 添加输入框失焦保存
-            text.inputEl.addEventListener('blur', async () => {
-              try {
-                await this.plugin.saveSettings();
-              } catch (error) {
-                loggerOnError(error, "设置中出现错误\n(About Blank)");
-              }
-            });
-          });
-          
-          // 删除按钮
-          settingItem.addButton((button) => {
-            button
-              .setButtonText("删除")
-              .setCta()
-              .onClick(async () => {
-                try {
-                  this.plugin.settings.customStats.splice(index, 1);
-                  await this.plugin.saveSettings();
-                  renderStatsList();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
-              });
-          });
-        });
-      };
-      
-      renderStatsList();
-      
-      // 添加新统计项目按钮
-      new Setting(this.containerEl)
-        .addButton((button) => {
-          button
-            .setButtonText("+ 添加统计项目")
-            .setCta()
-            .onClick(async () => {
-              try {
-                this.plugin.settings.customStats.push({
-                  type: 'folder',
-                  value: '',
-                  displayName: ''
-                });
-                await this.plugin.saveSettings();
-                renderStatsList();
-              } catch (error) {
-                loggerOnError(error, "设置中出现错误\n(About Blank)");
-              }
-            });
-        });
-    }
+    // 统计设置已移至 Logo 设置中，此方法保留为空以避免破坏现有调用
   };
 
   private makeSettingsHeatmap = (): void => {

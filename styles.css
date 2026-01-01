@@ -129,25 +129,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   opacity: 1;
   transform: scale(1);
 }
-/* 热力图悬浮提示样式 - 匹配React组件设计 */
-.about-blank-heatmap-cell:hover::after {
-    content: attr(data-date) ", " attr(data-count) " 个文件";
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: var(--background-primary);
-    color: var(--text-normal);
-    padding: 4px 8px;
-    border-radius: var(--radius-s);
-    font-size: var(--font-ui-smaller);
-    white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--background-modifier-border);
-    z-index: 1000;
-    pointer-events: none;
-    margin-bottom: 4px;
-}
 
 .about-blank-button-container:has(.svg-icon) .about-blank-button {
   padding-left: var(--about-blank-icon-text-gap);

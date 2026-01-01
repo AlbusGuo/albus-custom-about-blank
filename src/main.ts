@@ -72,6 +72,11 @@ export default class AboutBlank extends Plugin {
   needToResisterActions: boolean;
   needToRemoveActions: boolean;
   needToResisterQuickActions: boolean;
+  
+  // 性能优化：类级别的缓存
+  private statsCache: Array<{id: string, label: string, value: number | string}> | null = null;
+  private statsCacheTimestamp: number = 0;
+  private readonly STATS_CACHE_DURATION = 5000; // 增加到5秒缓存
 
   async onload() {
     try {
@@ -321,7 +326,6 @@ export default class AboutBlank extends Plugin {
     // 创建图标容器
     const iconContainer = document.createElement('div');
     iconContainer.addClass('about-blank-default-icon');
-    iconContainer.addClass('about-blank-tooltip');
     
     // 根据action类型添加不同的图标
     let iconName = 'file'; // 默认图标
@@ -349,9 +353,9 @@ export default class AboutBlank extends Plugin {
     // 创建Lucide图标
     setIcon(iconContainer, iconName);
     
-    // 添加悬浮提示 - 使用自定义data属性而不是title属性
+    // 添加悬浮提示 - 使用 Obsidian 默认 tooltip
     if (originalText) {
-      iconContainer.setAttribute('data-tooltip', originalText);
+      actionEl.setAttribute('aria-label', originalText);
     }
     
     // 清空原始内容并添加图标
@@ -371,7 +375,7 @@ export default class AboutBlank extends Plugin {
     const container = element.createEl(
       "div",
       {
-        cls: `${UNSAFE_CSS_CLASSES.defaultEmptyAction} ${CSS_CLASSES.visible} ${CSS_CLASSES.aboutBlankContainer} about-blank-tooltip`,
+        cls: `${UNSAFE_CSS_CLASSES.defaultEmptyAction} ${CSS_CLASSES.visible} ${CSS_CLASSES.aboutBlankContainer}`,
       },
       (elem: Element) => {
         elem.addEventListener("click", () => {
@@ -380,8 +384,8 @@ export default class AboutBlank extends Plugin {
       },
     );
     
-    // 添加悬浮提示 - 使用自定义data属性而不是title属性
-    container.setAttribute('data-tooltip', action.name);
+    // 添加悬浮提示 - 使用 Obsidian 默认 tooltip
+    container.setAttribute('aria-label', action.name);
     
     if (!isFalsyString(action.icon)) {
       setIcon(container, action.icon);
@@ -620,8 +624,8 @@ export default class AboutBlank extends Plugin {
           (this as any).globalRenderHeatmap();
         }
         
-        // 渲染统计气泡（使用防抖）
-        if (this.settings.showStats && (this as any).globalRenderStats) {
+        // 渲染统计气泡（使用防抖）- 添加 logoEnabled 检查
+        if (this.settings.logoEnabled && this.settings.showStats && (this as any).globalRenderStats) {
           (this as any).globalRenderStats();
         }
         
@@ -666,27 +670,52 @@ export default class AboutBlank extends Plugin {
             clearTimeout(observerTimeout);
           }
           
-          observerTimeout = setTimeout(() => {
-            if (isProcessing) return; // 再次检查处理状态
-            
-            isProcessing = true; // 设置处理状态
-            
-            // 渲染热力图
-            if (this.settings.heatmapEnabled && 
-                (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-              (this as any).globalRenderHeatmap();
-            }
-            
-            // 渲染统计气泡（使用防抖）
-            if (this.settings.showStats && (this as any).globalRenderStats) {
-              (this as any).globalRenderStats();
-            }
-            
-            // 重置处理状态
-            setTimeout(() => {
-              isProcessing = false;
-            }, 500); // 确保渲染完成后再重置
-          }, hasNewEmptyLeaf ? 100 : 300); // 新标签页更快响应
+          // 性能优化：对新标签页使用 requestAnimationFrame 立即渲染
+          if (hasNewEmptyLeaf) {
+            requestAnimationFrame(() => {
+              if (isProcessing) return;
+              isProcessing = true;
+              
+              // 渲染热力图
+              if (this.settings.heatmapEnabled && 
+                  (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
+                (this as any).globalRenderHeatmap();
+              }
+              
+              // 渲染统计气泡 - 直接调用，不经过防抖
+              if (this.settings.logoEnabled && this.settings.showStats && (this as any).globalRenderStatsImmediate) {
+                (this as any).globalRenderStatsImmediate();
+              }
+              
+              // 重置处理状态
+              setTimeout(() => {
+                isProcessing = false;
+              }, 300);
+            });
+          } else {
+            // 非新标签页的情况，使用防抖
+            observerTimeout = setTimeout(() => {
+              if (isProcessing) return;
+              
+              isProcessing = true;
+              
+              // 渲染热力图
+              if (this.settings.heatmapEnabled && 
+                  (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
+                (this as any).globalRenderHeatmap();
+              }
+              
+              // 渲染统计气泡
+              if (this.settings.logoEnabled && this.settings.showStats && (this as any).globalRenderStats) {
+                (this as any).globalRenderStats();
+              }
+              
+              // 重置处理状态
+              setTimeout(() => {
+                isProcessing = false;
+              }, 500);
+            }, 300);
+          }
         }
       });
       
@@ -713,7 +742,7 @@ export default class AboutBlank extends Plugin {
     
     // 添加防抖机制，避免频繁渲染
     let lastRenderTime = 0;
-    const renderDebounceTime = 2000; // 2秒内只渲染一次
+    const renderDebounceTime = 3000; // 增加到3秒
     
     // 设置定期检查和渲染，但降低频率并添加条件检查
     (this as any).heatmapRenderInterval = setInterval(() => {
@@ -724,7 +753,7 @@ export default class AboutBlank extends Plugin {
         return;
       }
       
-      // 检查所有空标签页
+      // 性能优化：检查所有空标签页
       const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
       
       // 只在有新标签页时才渲染
@@ -740,7 +769,7 @@ export default class AboutBlank extends Plugin {
         (this as any).globalRenderHeatmap();
         lastRenderTime = now;
       }
-    }, 3000); // 每3秒检查一次，进一步降低频率
+    }, 5000); // 增加到5秒检查一次
   };
 
   generateHeatmapData = (): void => {
@@ -817,7 +846,7 @@ export default class AboutBlank extends Plugin {
       (this as any).heatmapDataCache = dateCountMap;
       
       const renderHeatmapInAllLeaves = () => {
-        // 获取所有空的新标签页
+        // 性能优化：批量查询所有需要的元素
         const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
         
         emptyLeaves.forEach((leaf, index) => {
@@ -835,8 +864,8 @@ export default class AboutBlank extends Plugin {
           
           if (!heatmapContainer) return;
           
-          // 清空容器
-          heatmapContainer.innerHTML = '';
+          // 性能优化：检查是否已经有内容，避免重复渲染
+          if (heatmapContainer.children.length > 0) return;
           
           // 获取action list的宽度并设置热力图容器宽度
           const actionList = leaf.querySelector('.empty-state-action-list') as HTMLElement;
@@ -854,12 +883,11 @@ export default class AboutBlank extends Plugin {
         });
       };
       
-      // 立即渲染
+      // 性能优化：立即渲染，但删除多余的重复渲染
       renderHeatmapInAllLeaves();
       
-      // 延迟再次渲染，确保在DOM完全加载后也能显示
-      setTimeout(renderHeatmapInAllLeaves, 100);
-      setTimeout(renderHeatmapInAllLeaves, 500);
+      // 只保留一次延迟渲染，确保DOM加载后显示
+      setTimeout(renderHeatmapInAllLeaves, 200);
       
       // 设置全局热力图渲染函数，供后续调用
       (this as any).globalRenderHeatmap = renderHeatmapInAllLeaves;
@@ -984,23 +1012,19 @@ export default class AboutBlank extends Plugin {
   // 创建统计气泡
   createStatsBubbles = (): void => {
     try {
-      // 检查是否启用统计
-      if (!this.settings.showStats) {
+      // 检查是否启用Logo和统计
+      if (!this.settings.logoEnabled || !this.settings.showStats) {
         // 移除所有现有的统计气泡
         const existingStatsContainers = document.querySelectorAll('.about-blank-stats-bubbles');
         existingStatsContainers.forEach(container => container.remove());
         return;
       }
       
-      // 缓存统计数据，避免重复计算
-      let cachedStats: Array<{id: string, label: string, value: number | string}> | null = null;
-      let lastStatsUpdate = 0;
-      const STATS_CACHE_DURATION = 1000; // 1秒缓存
-      
+      // 使用类级别缓存，避免重复计算
       const getStatsData = () => {
         const now = Date.now();
-        if (cachedStats && (now - lastStatsUpdate) < STATS_CACHE_DURATION) {
-          return cachedStats;
+        if (this.statsCache && (now - this.statsCacheTimestamp) < this.STATS_CACHE_DURATION) {
+          return this.statsCache;
         }
         
         // 基础统计项目
@@ -1017,10 +1041,10 @@ export default class AboutBlank extends Plugin {
           value: this.calculateCustomStatCount(stat)
         }));
 
-        // 合并所有统计项目
-        cachedStats = [...baseStats, ...customStatsItems];
-        lastStatsUpdate = now;
-        return cachedStats;
+        // 合并所有统计项目并缓存
+        this.statsCache = [...baseStats, ...customStatsItems];
+        this.statsCacheTimestamp = now;
+        return this.statsCache;
       };
       
       // 防抖渲染函数
@@ -1031,16 +1055,16 @@ export default class AboutBlank extends Plugin {
         }
         renderTimeout = setTimeout(() => {
           renderStatsInAllLeavesImpl();
-        }, 50); // 50ms防抖
+        }, 100); // 增加防抖时间到100ms
       };
       
       const renderStatsInAllLeavesImpl = () => {
-        // 获取所有空的新标签页
+        // 性能优化：批量查询所有需要的元素
         const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
         
         if (emptyLeaves.length === 0) return;
         
-        // 获取统计数据（使用缓存）
+        // 获取统计数据（使用类级别缓存）
         const allStats = getStatsData();
         
         // 获取排序后的统计项目
@@ -1063,6 +1087,11 @@ export default class AboutBlank extends Plugin {
         
         const orderedStats = getOrderedStats();
         
+        // 性能优化：预计算通用值
+        const logoSize = this.settings.logoSize || 120;
+        const bubbleSpacing = 50;
+        const sideMargin = 20;
+        
         emptyLeaves.forEach(leaf => {
           // 查找空状态容器
           const container = leaf.querySelector('.empty-state-container') as HTMLElement;
@@ -1072,22 +1101,15 @@ export default class AboutBlank extends Plugin {
           const actionList = container.querySelector('.empty-state-action-list');
           if (!actionList) return; // 等待action列表加载完成
           
-          // 检查是否已经有统计气泡
+          // 性能优化：检查是否已经有统计气泡，避免重复渲染
           const existingStats = container.querySelector('.about-blank-stats-bubbles');
-          if (existingStats) return; // 已存在则跳过，避免重复渲染
-          
-          // 检查logo是否已经渲染
-          const hasLogo = container.classList.contains('logo-top') || 
-                         container.querySelector('.empty-state-container::before');
+          if (existingStats) return; // 已存在则跳过
 
           // 创建统计气泡容器
           const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
 
-          // 缓存位置计算结果
+          // 性能优化：缓存容器尺寸计算结果
           const containerHeight = container.clientHeight || 400;
-          const logoSize = this.settings.logoSize || 120;
-          const bubbleSpacing = 50;
-          const sideMargin = 20;
           
           // logo固定在顶部，距离顶部约20%的位置
           const logoActualY = containerHeight * 0.2;
@@ -1114,6 +1136,9 @@ export default class AboutBlank extends Plugin {
             }
           }
           
+          // 性能优化：使用 DocumentFragment 批量添加气泡
+          const fragment = document.createDocumentFragment();
+          
           // 创建统计气泡
           orderedStats.forEach((stat, index) => {
             if (!stat) return;
@@ -1138,14 +1163,9 @@ export default class AboutBlank extends Plugin {
               finalY = logoActualY + (logoSize / 2) + sideMargin + verticalOffset;
             }
             
-            const bubble = statsContainer.createEl('div', { cls: 'about-blank-stats-bubble' });
-            
-            // 根据左右位置添加样式类
-            if (isLeft) {
-              bubble.addClass('about-blank-stats-bubble-left');
-            } else {
-              bubble.addClass('about-blank-stats-bubble-right');
-            }
+            // 性能优化：直接创建元素而不使用 createEl
+            const bubble = document.createElement('div');
+            bubble.className = isLeft ? 'about-blank-stats-bubble about-blank-stats-bubble-left' : 'about-blank-stats-bubble about-blank-stats-bubble-right';
             
             // 设置拖拽属性
             bubble.setAttribute('draggable', 'true');
@@ -1155,11 +1175,16 @@ export default class AboutBlank extends Plugin {
             bubble.style.top = `${finalY}px`;
             
             // 创建统计内容
-            const label = bubble.createEl('div', { cls: 'about-blank-stats-bubble-label' });
+            const label = document.createElement('div');
+            label.className = 'about-blank-stats-bubble-label';
             label.textContent = stat.label;
             
-            const value = bubble.createEl('div', { cls: 'about-blank-stats-bubble-value' });
+            const value = document.createElement('div');
+            value.className = 'about-blank-stats-bubble-value';
             value.textContent = stat.value.toString();
+            
+            bubble.appendChild(label);
+            bubble.appendChild(value);
             
             // 添加拖拽事件监听器
             bubble.addEventListener('dragstart', (e) => {
@@ -1226,12 +1251,12 @@ export default class AboutBlank extends Plugin {
                   
                   if (draggedBubble && targetBubble) {
                     // 交换两个气泡的位置
-                    const draggedTop = (draggedBubble as HTMLElement).style.top;
-                    const targetTop = (targetBubble as HTMLElement).style.top;
+                    const draggedTop = draggedBubble.style.top;
+                    const targetTop = targetBubble.style.top;
                     
                     // 交换位置
-                    (draggedBubble as HTMLElement).style.top = targetTop;
-                    (targetBubble as HTMLElement).style.top = draggedTop;
+                    draggedBubble.style.top = targetTop;
+                    targetBubble.style.top = draggedTop;
                     
                     // 交换左右类名
                     const draggedHasLeft = draggedBubble.classList.contains('about-blank-stats-bubble-left');
@@ -1264,17 +1289,26 @@ export default class AboutBlank extends Plugin {
                 }
               }
             });
+            
+            // 将气泡添加到 fragment
+            fragment.appendChild(bubble);
           });
+          
+          // 性能优化：一次性将所有气泡添加到容器
+          statsContainer.appendChild(fragment);
         });
       };
       
       // 导出防抖渲染函数
       const renderStatsInAllLeaves = debouncedRender;
       
+      // 导出立即执行的渲染函数（用于新标签页）
+      const renderStatsImmediate = renderStatsInAllLeavesImpl;
+      
       // 优化的智能等待渲染函数
       let waitTimeout: NodeJS.Timeout | null = null;
       const waitForReadyAndRender = (retryCount = 0) => {
-        if (retryCount > 5) return; // 减少重试次数
+        if (retryCount > 10) return; // 增加重试次数但减少间隔
         
         // 检查是否有至少一个完全准备好的容器
         const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
@@ -1292,11 +1326,11 @@ export default class AboutBlank extends Plugin {
         }
         
         if (hasReadyContainer) {
-          // 容器已准备好，进行渲染
-          renderStatsInAllLeaves();
+          // 容器已准备好，立即渲染
+          renderStatsInAllLeavesImpl();
         } else {
           // 容器未准备好，等待后重试
-          waitTimeout = setTimeout(() => waitForReadyAndRender(retryCount + 1), 200); // 增加等待时间
+          waitTimeout = setTimeout(() => waitForReadyAndRender(retryCount + 1), 50); // 减少到 50ms
         }
       };
       
@@ -1305,6 +1339,7 @@ export default class AboutBlank extends Plugin {
       
       // 设置全局统计渲染函数，供后续调用
       (this as any).globalRenderStats = renderStatsInAllLeaves;
+      (this as any).globalRenderStatsImmediate = renderStatsImmediate; // 立即执行版本
       
     } catch (error) {
       loggerOnError(error, "渲染统计气泡失败\n(About Blank)");
@@ -1468,6 +1503,9 @@ export default class AboutBlank extends Plugin {
               
               const color = this.getHeatmapColor(0);
               cellEl.style.backgroundColor = color;
+              
+              // 添加 Obsidian 默认 tooltip
+              cellEl.setAttribute('aria-label', `${contributionItem.date}, 0 个文件`);
             } else {
               cellEl.setAttribute('data-level', '0');
             }
@@ -1478,6 +1516,9 @@ export default class AboutBlank extends Plugin {
             
             const color = this.getHeatmapColor(contributionItem.count);
             cellEl.style.backgroundColor = color;
+            
+            // 添加 Obsidian 默认 tooltip
+            cellEl.setAttribute('aria-label', `${contributionItem.date}, ${contributionItem.count} 个文件`);
           }
         }
       }
