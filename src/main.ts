@@ -65,6 +65,8 @@ import {
   UNSAFE_VIEW_TYPES,
   type UnsafeEmptyView,
 } from "src/unsafe";
+
+import { HeatmapFilesModal } from "src/ui/heatmapFilesModal";
 // =============================================================================
 
 export default class AboutBlank extends Plugin {
@@ -770,6 +772,46 @@ export default class AboutBlank extends Plugin {
         lastRenderTime = now;
       }
     }, 5000); // 增加到5秒检查一次
+  };
+
+  // 获取指定日期的文件列表
+  getFilesForDate = (dateStr: string): TFile[] => {
+    const dataSource = this.settings.heatmapDataSource;
+    const frontmatterField = this.settings.heatmapFrontmatterField;
+    const markdownFiles = this.app.vault.getMarkdownFiles();
+    const filesForDate: TFile[] = [];
+
+    for (const file of markdownFiles) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      let fileDate: Date | null = null;
+
+      if (dataSource === "fileCreation" && file.stat) {
+        fileDate = new Date(file.stat.ctime);
+      } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
+        const dateValue = cache.frontmatter[frontmatterField];
+        if (dateValue) {
+          const parsedDate = new Date(dateValue);
+          if (!isNaN(parsedDate.getTime())) {
+            fileDate = parsedDate;
+          }
+        }
+      }
+
+      if (fileDate && !isNaN(fileDate.getTime())) {
+        const utcFileDate = new Date(Date.UTC(
+          fileDate.getFullYear(),
+          fileDate.getMonth(),
+          fileDate.getDate()
+        ));
+        const fileDateStr = utcFileDate.toISOString().split('T')[0];
+
+        if (fileDateStr === dateStr) {
+          filesForDate.push(file);
+        }
+      }
+    }
+
+    return filesForDate;
   };
 
   generateHeatmapData = (): void => {
@@ -1506,6 +1548,14 @@ export default class AboutBlank extends Plugin {
               
               // 添加 Obsidian 默认 tooltip
               cellEl.setAttribute('aria-label', `${contributionItem.date}, 0 个文件`);
+              
+              // 添加点击事件 - 即使没有文件也可以点击查看
+              cellEl.style.cursor = 'pointer';
+              cellEl.addEventListener('click', () => {
+                const files = this.getFilesForDate(contributionItem.date);
+                const modal = new HeatmapFilesModal(this.app, this, contributionItem.date, files);
+                modal.open();
+              });
             } else {
               cellEl.setAttribute('data-level', '0');
             }
@@ -1519,6 +1569,14 @@ export default class AboutBlank extends Plugin {
             
             // 添加 Obsidian 默认 tooltip
             cellEl.setAttribute('aria-label', `${contributionItem.date}, ${contributionItem.count} 个文件`);
+            
+            // 添加点击事件
+            cellEl.style.cursor = 'pointer';
+            cellEl.addEventListener('click', () => {
+              const files = this.getFilesForDate(contributionItem.date);
+              const modal = new HeatmapFilesModal(this.app, this, contributionItem.date, files);
+              modal.open();
+            });
           }
         }
       }
