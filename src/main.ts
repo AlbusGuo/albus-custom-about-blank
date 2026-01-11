@@ -250,6 +250,31 @@ export default class AboutBlank extends Plugin {
     });
   };
 
+  refreshAllNewTabs = (): void => {
+    const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
+    if (emptyLeaves.length === 0) {
+      return;
+    }
+    emptyLeaves.forEach((leaf) => {
+      const emptyView = leaf.view as UnsafeEmptyView;
+      const actionListEl = emptyView.actionListEl;
+      if (!actionListEl) {
+        return;
+      }
+      // 移除所有自定义按钮
+      const customButtons = actionListEl.querySelectorAll(`.${CSS_CLASSES.aboutBlankContainer}`);
+      customButtons.forEach((button) => button.remove());
+      
+      // 重新添加按钮（使用最新的顺序）
+      const practicalActions: PracticalAction[] = this.settings.actions
+        .filter((action) => action.display === true)
+        .map((action) => toPracticalAction(this.app, action))
+        .filter((action) => action !== undefined);
+      
+      practicalActions.forEach((action) => this.addActionButton(actionListEl, action));
+    });
+  };
+
   private addButtonsEventHandler = (): void => {
     if (!this.settings.addActionsToNewTabs) {
       return;

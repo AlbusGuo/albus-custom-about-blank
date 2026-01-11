@@ -1096,6 +1096,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     if (this.plugin.settings.quickActions) {
       this.plugin.registerQuickActions();
     }
+    // 刷新所有打开的新标签页，使其显示最新的按钮顺序
+    this.plugin.refreshAllNewTabs();
     this.renderCurrentTab();
   };
 
