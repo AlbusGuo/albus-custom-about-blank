@@ -745,7 +745,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before
 
 /* 热力图文件列表模态窗口样式 */
 .about-blank-heatmap-files-modal .modal-content {
-  padding: 0;
   max-width: 600px;
   width: 90vw;
   max-height: 80vh;
@@ -864,4 +863,194 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before
 
 .about-blank-heatmap-cell[style*="cursor: pointer"]:hover {
   filter: brightness(1.1);
+}
+/* 设置标签页样式 */
+.about-blank-settings-tabs {
+  border-bottom: 1px solid var(--background-modifier-border);
+  overflow-x: auto;
+  white-space: nowrap;
+  margin-bottom: 20px;
+  display: flex;
+  gap: 4px;
+}
+
+button.about-blank-settings-tab {
+  border: none;
+  box-shadow: none;
+  padding: 8px 16px;
+  background-color: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+button.about-blank-settings-tab-selected {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 4px;
+}
+
+button.about-blank-settings-tab:not(.about-blank-settings-tab-selected):hover {
+  background-color: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+/* 设置内容区域 */
+.about-blank-settings-content {
+  padding-top: 1em;
+}
+
+/* 紧凑型设置项样式 */
+.about-blank-settings-content .setting-item {
+  padding: 0.5em 0;
+}
+
+.about-blank-settings-content .setting-item:first-child {
+  padding-top: 0;
+}
+
+/* 设置组样式 */
+.about-blank-settings-content .setting-group {
+  margin-bottom: 1.5em;
+}
+
+.about-blank-settings-content .setting-group:last-child {
+  margin-bottom: 0;
+}
+
+/* 按钮设置页面样式（参考 Custom Ribbon Buttons） */
+.about-blank-actions-empty {
+  text-align: center;
+  padding: 2em 1.25em;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  margin: 1em 0;
+}
+
+.about-blank-actions-empty p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.about-blank-actions-empty .setting-item-description {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.about-blank-actions-add-container {
+  display: flex;
+  gap: 0.75em;
+  margin: 1em 0;
+}
+
+.about-blank-actions-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375em;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 0.5em 0.75em;
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.about-blank-actions-add-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* 图标选择器样式 */
+.about-blank-icon-picker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.about-blank-icon-picker-button:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.about-blank-icon-picker-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.about-blank-icon-picker-preview svg {
+  width: 18px;
+  height: 18px;
+  color: var(--icon-color);
+}
+
+/* 按钮列表容器样式（参考 Custom Ribbon Buttons） */
+.about-blank-actions-list {
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-m);
+  margin: 0em 0em 1em 0em;
+  padding: 1em 1em;
+}
+
+.is-mobile .about-blank-actions-list {
+  padding: 1em;
+}
+
+.about-blank-actions-list .setting-item {
+  background-color: transparent !important;
+  border-radius: 0;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+  padding: 0.5em;
+  margin: 0.25em;
+}
+
+.about-blank-actions-list .setting-item:first-child {
+  border-top: none;
+}
+
+.about-blank-actions-list .setting-item:focus-within {
+  outline: solid 2px var(--background-modifier-border-focus);
+  border-radius: var(--radius-m);
+}
+
+/* 拖拽手柄样式 */
+.about-blank-drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+}
+
+.about-blank-drag-handle:active {
+  cursor: grabbing;
+}
+
+.about-blank-drag-handle svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 拖拽排序样式 */
+.about-blank-draggable-setting.dragging {
+  opacity: 0.5;
+}
+
+.about-blank-draggable-setting.drag-over {
+  border: 2px dashed var(--interactive-accent) !important;
+  background-color: var(--background-modifier-hover) !important;
 }

@@ -68,7 +68,6 @@ export class ActionSettingsModal extends Modal {
   modAction: Action; // Modified
   newActionName: string = "";
   actionContentDesc: string = "";
-  switchInfo: boolean = false;
   saveNotice: boolean = false;
 
   constructor(

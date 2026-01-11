@@ -151,7 +151,8 @@ export default class AboutBlank extends Plugin {
     await this.saveData(this.settings);
     this.applyLogoSettings();
     this.applyHeatmapSettings();
-    this.closeAllNewTabs();
+    // 不再自动关闭新标签页，避免影响设置界面
+    // this.closeAllNewTabs();
   };
 
   // 保存设置但不刷新页面

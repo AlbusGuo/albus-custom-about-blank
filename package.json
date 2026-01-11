@@ -1,6 +1,6 @@
 {
-  "name": "about-blank",
-  "version": "2.2.0",
+  "name": "albus-custom-about-blank",
+  "version": "2.3.0",
   "description": "通过添加\"命令\"或\"打开文件\"来自定义空文件（新标签页）。并可编辑这些功能：分组、设置图标、执行前确认、注册为新命令。",
   "main": "main.js",
   "scripts": {
@@ -17,16 +17,16 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.25.1",
-    "@types/node": "^22.14.1",
+    "@types/node": "^25.0.3",
     "builtin-modules": "^5.0.0",
     "cspell": "^9.0.2",
     "dprint": "^0.49.0",
     "esbuild": "^0.25.3",
     "eslint": "^9.25.1",
     "markdownlint-cli2": "^0.17.2",
-    "obsidian": "^1.8.7",
+    "obsidian": "^1.11.4",
     "tslib": "^2.8.1",
-    "typescript": "^5.8.3",
+    "typescript": "^5.7.3",
     "typescript-eslint": "^8.31.0"
   },
   "dependencies": {

@@ -222,7 +222,11 @@ export const makeSettingsActionsHeader = (
               }
             }
             // page.newActionName = "";
-            page.display();
+            if (page instanceof ActionSettingsModal) {
+              page.display();
+            } else {
+              page.renderCurrentTab();
+            }
           } catch (error) {
             loggerOnError(error, "Error in settings.\n(About Blank)");
           }
@@ -252,45 +256,29 @@ export const makeSettingsActionsList = (
       setFakeIconToIconText(actionIconEl);
     }
 
-    if (!page.switchInfo) {
-      const kindIconEl = settingItem.controlEl.createEl("div", {
-        cls: CSS_CLASSES.iconText,
-      });
-      setIcon(kindIconEl, ACTION_KINDS_ICON[action.content.kind]);
+    const kindIconEl = settingItem.controlEl.createEl("div", {
+      cls: CSS_CLASSES.iconText,
+    });
+    setIcon(kindIconEl, ACTION_KINDS_ICON[action.content.kind]);
+    setFakeIconToIconText(kindIconEl);
 
-      const contentText: string = (() => {
-        if (action.content.kind === ACTION_KINDS.command) {
-          return `${action.content.commandName}`;
-        } else if (action.content.kind === ACTION_KINDS.file) {
-          return `${action.content.fileName}`;
-        } else if (action.content.kind === ACTION_KINDS.group) {
-          return `${action.content.actions.length} actions`;
-        }
-        return "";
-      })();
-
-      settingItem
-        .addText((text) => {
-          text
-            .setDisabled(true)
-            .setValue(contentText);
-        });
-    } else {
-      Object.keys(ACTION_INFO_ICON).forEach((key: keyof Action) => {
-        if (key !== "display" || nextPageIndex === 0) {
-          const iconEl = settingItem.controlEl.createEl("div", {
-            cls: CSS_CLASSES.iconText,
-          });
-          setIcon(iconEl, ACTION_INFO_ICON[key] ?? "");
-          setFakeIconToIconText(iconEl);
-          if (action[key] === true) { // Explicitly true
-            iconEl.classList.add(CSS_CLASSES.ctaIcon);
-          }
-        }
-      });
-    }
+    const contentText: string = (() => {
+      if (action.content.kind === ACTION_KINDS.command) {
+        return `${action.content.commandName}`;
+      } else if (action.content.kind === ACTION_KINDS.file) {
+        return `${action.content.fileName}`;
+      } else if (action.content.kind === ACTION_KINDS.group) {
+        return `${action.content.actions.length} actions`;
+      }
+      return "";
+    })();
 
     settingItem
+      .addText((text) => {
+        text
+          .setDisabled(true)
+          .setValue(contentText);
+      })
       .addExtraButton((button) => {
         button
           .setIcon("arrow-up")
@@ -362,19 +350,4 @@ export const makeSettingsActionsList = (
         button.extraSettingsEl.classList.add(CSS_CLASSES.iconHeightAdjuster);
       });
   });
-
-  new Setting(elem)
-    .addButton((button) => {
-      button
-        .setButtonText("切换信息")
-        .setTooltip("切换要显示的操作信息")
-        .onClick(() => {
-          try {
-            page.switchInfo = !page.switchInfo;
-            page.display();
-          } catch (error) {
-            loggerOnError(error, "Error in settings.\n(About Blank)");
-          }
-        });
-    });
 };

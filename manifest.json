@@ -1,8 +1,8 @@
 {
   "id": "albus-custom-about-blank",
   "name": "Custom About Blank",
-  "version": "2.2.0",
-  "minAppVersion": "1.8.4",
+  "version": "2.3.0",
+  "minAppVersion": "1.11.4",
   "description": "自定义新标签页",
   "author": "Ai-Jani & Albus",
   "authorUrl": "https://github.com/AlbusGuo",
