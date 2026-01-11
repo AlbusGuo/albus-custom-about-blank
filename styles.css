@@ -1054,3 +1054,179 @@ button.about-blank-settings-tab:not(.about-blank-settings-tab-selected):hover {
   border: 2px dashed var(--interactive-accent) !important;
   background-color: var(--background-modifier-hover) !important;
 }
+
+/* ========================================
+   Logo 与统计标签页 - 响应式设计
+   ======================================== */
+
+/* 统计项目列表的 control 区域 - 允许换行 */
+.about-blank-settings-content .setting-item-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 统计项目中的控件样式 */
+.about-blank-settings-content .setting-item-control > * {
+  flex-shrink: 0;
+}
+
+/* 下拉框样式 */
+.about-blank-settings-content .setting-item-control select {
+  min-width: 100px;
+  max-width: 150px;
+}
+
+/* 文本输入框样式 */
+.about-blank-settings-content .setting-item-control input[type="text"] {
+  min-width: 120px;
+  max-width: 200px;
+}
+
+/* 删除按钮样式 */
+.about-blank-settings-content .setting-item-control .clickable-icon {
+  flex-shrink: 0;
+}
+
+/* ========================================
+   按钮标签页 - 响应式设计
+   ======================================== */
+
+/* 按钮列表项的 control 区域 - 允许换行 */
+.about-blank-actions-list .setting-item-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+/* 按钮列表项中的控件样式 */
+.about-blank-actions-list .setting-item-control > * {
+  flex-shrink: 0;
+}
+
+/* 按钮名称输入框 */
+.about-blank-actions-list .setting-item-control input[type="text"] {
+  min-width: 100px;
+  max-width: 180px;
+}
+
+/* 按钮类型下拉框 */
+.about-blank-actions-list .setting-item-control select {
+  min-width: 80px;
+  max-width: 120px;
+}
+
+/* 图标选择器按钮 */
+.about-blank-actions-list .about-blank-icon-picker-button {
+  flex-shrink: 0;
+}
+
+/* 开关按钮 */
+.about-blank-actions-list .setting-item-control .checkbox-container {
+  flex-shrink: 0;
+}
+
+/* 删除按钮 */
+.about-blank-actions-list .setting-item-control .clickable-icon {
+  flex-shrink: 0;
+}
+
+/* 拖拽手柄在 control 区域中的位置 */
+.about-blank-actions-list .about-blank-drag-handle {
+  order: -1;
+  flex-shrink: 0;
+}
+
+/* ========================================
+   响应式设计 - 小屏幕适配
+   ======================================== */
+
+/* 平板设备 (宽度 < 768px) */
+@media (max-width: 768px) {
+  /* 统计项目控件 */
+  .about-blank-settings-content .setting-item-control select {
+    min-width: 90px;
+    max-width: 120px;
+  }
+
+  .about-blank-settings-content .setting-item-control input[type="text"] {
+    min-width: 100px;
+    max-width: 150px;
+  }
+
+  /* 按钮列表控件 */
+  .about-blank-actions-list .setting-item-control input[type="text"] {
+    min-width: 80px;
+    max-width: 140px;
+  }
+
+  .about-blank-actions-list .setting-item-control select {
+    min-width: 70px;
+    max-width: 100px;
+  }
+}
+
+/* 手机设备 (宽度 < 480px) */
+@media (max-width: 480px) {
+  /* 统计项目控件 - 每个控件占满一行 */
+  .about-blank-settings-content .setting-item-control {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .about-blank-settings-content .setting-item-control > * {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* 按钮列表控件 - 每个控件占满一行 */
+  .about-blank-actions-list .setting-item-control {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .about-blank-actions-list .setting-item-control > * {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* 拖拽手柄和删除按钮保持小尺寸 */
+  .about-blank-actions-list .about-blank-drag-handle,
+  .about-blank-actions-list .setting-item-control .clickable-icon {
+    width: auto;
+    max-width: auto;
+  }
+
+  /* 图标选择器保持小尺寸 */
+  .about-blank-actions-list .about-blank-icon-picker-button {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* ========================================
+   移动设备特定样式
+   ======================================== */
+
+.is-mobile .about-blank-settings-content .setting-item-control {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.is-mobile .about-blank-settings-content .setting-item-control > * {
+  flex-shrink: 0;
+}
+
+.is-mobile .about-blank-actions-list .setting-item-control {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.is-mobile .about-blank-actions-list .setting-item-control > * {
+  flex-shrink: 0;
+}
