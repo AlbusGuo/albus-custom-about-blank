@@ -225,7 +225,7 @@ export default class AboutBlank extends Plugin {
         cmd: true,
         cmdId: COMMANDS.quickActions.id,
       },
-      this.settings.actions.filter((action) => action.display === true),
+      this.settings.actions,
       `About Blank: ${COMMANDS.quickActions.name}`,
     );
     if (registerAction === undefined) {
@@ -267,7 +267,6 @@ export default class AboutBlank extends Plugin {
       
       // 重新添加按钮（使用最新的顺序）
       const practicalActions: PracticalAction[] = this.settings.actions
-        .filter((action) => action.display === true)
         .map((action) => toPracticalAction(this.app, action))
         .filter((action) => action !== undefined);
       
@@ -303,7 +302,6 @@ export default class AboutBlank extends Plugin {
         return;
       }
       const practicalActions: PracticalAction[] = this.settings.actions
-        .filter((action) => action.display === true) // Explicitly true
         .map((action) => toPracticalAction(this.app, action))
         .filter((action) => action !== undefined);
       // Expect: emptyActionListEl has `createEl()` method.

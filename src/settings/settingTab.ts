@@ -710,9 +710,11 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           });
 
       // 自定义统计项目
+      const statsContainer = containerEl.createEl('div', { cls: 'about-blank-stats-container' });
       this.plugin.settings.customStats.forEach((stat, index) => {
         statsGroup.addSetting((statSetting) => {
           statSetting.setName(`统计项目 ${index + 1}`);
+          statSetting.settingEl.addClass('about-blank-stat-setting');
           
           statSetting.addDropdown((dropdown) => {
             dropdown
@@ -818,6 +820,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
    */
   private createActionSetting = (actionsGroup: SettingGroup, action: Action, index: number): void => {
     actionsGroup.addSetting((setting) => {
+      // 添加 CSS 类用于响应式布局
+      setting.settingEl.addClass('about-blank-action-setting');
+      
+      // 设置标签
+      setting.setName('按钮');
+      
       // 添加拖拽功能
       this.makeDraggable(setting.settingEl, index);
 
@@ -921,18 +929,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-
-    // 显示开关
-    setting.addToggle(toggle => toggle
-      .setTooltip('在新标签页显示')
-      .setValue(action.display)
-      .onChange(async (value) => {
-        action.display = value;
-        await this.plugin.saveSettings();
-        if (this.plugin.settings.quickActions) {
-          this.plugin.registerQuickActions();
-        }
-      }));
 
     // 注册为命令开关
     setting.addToggle(toggle => toggle

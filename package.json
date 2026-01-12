@@ -1,6 +1,6 @@
 {
   "name": "albus-custom-about-blank",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "通过添加\"命令\"或\"打开文件\"来自定义空文件（新标签页）。并可编辑这些功能：分组、设置图标、执行前确认、注册为新命令。",
   "main": "main.js",
   "scripts": {

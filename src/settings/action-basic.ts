@@ -102,7 +102,6 @@ export interface Action {
   ask: boolean;
   cmd: boolean;
   cmdId: string;
-  display: boolean;
   content: ContentType;
 }
 
@@ -112,14 +111,12 @@ export const NEW_ACTION: Action = {
   ask: false,
   cmd: false,
   cmdId: "",
-  display: true,
   content: NEW_ACTION_CONTENT[ACTION_KINDS.command],
 } as const;
 
 export const ACTION_INFO_ICON: { [key in keyof Partial<Action>]: string; } = {
   ask: "message-circle-question",
   cmd: "square-terminal",
-  display: "eye",
 } as const;
 
 // =============================================================================
@@ -132,7 +129,6 @@ export const actionPropTypeCheck: {
   ask: (value: unknown) => isBool(value),
   cmd: (value: unknown) => isBool(value),
   cmdId: (value: unknown) => typeof value === "string",
-  display: (value: unknown) => isBool(value),
   content: (value: unknown) => {
     const contentValue = value as ContentType;
     if (contentValue.kind === ACTION_KINDS.command) {

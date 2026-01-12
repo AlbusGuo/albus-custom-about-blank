@@ -89,7 +89,7 @@ export class ActionSettingsModal extends Modal {
     this.modAction = objectDeepCopy(this.orgAction);
 
     if (this.pageIndex === 0) {
-      this.parentsDisplay = this.orgAction.display === true; // Explicitly true
+      this.parentsDisplay = true;
       this.plugin.needToResisterActions = false;
       this.plugin.needToRemoveActions = false;
       this.plugin.needToResisterQuickActions = false;
@@ -134,10 +134,8 @@ export class ActionSettingsModal extends Modal {
 
     if (this.plugin.settings.quickActions === true) {
       if (this.pageIndex === 0) {
-        // Only if both `Original` and `Modified` are false, do nothing.
-        if (this.orgAction.display || this.modAction.display === true) {
-          this.plugin.needToResisterQuickActions = true;
-        }
+        // Always register quick actions when enabled
+        this.plugin.needToResisterQuickActions = true;
       } else {
         if (this.parentsDisplay) {
           this.plugin.needToResisterQuickActions = true;
@@ -155,9 +153,7 @@ export class ActionSettingsModal extends Modal {
 
     if (this.plugin.settings.quickActions === true) {
       if (this.pageIndex === 0) {
-        if (this.orgAction.display) {
-          this.plugin.needToResisterQuickActions = true;
-        }
+        this.plugin.needToResisterQuickActions = true;
       } else {
         if (this.parentsDisplay) {
           this.plugin.needToResisterQuickActions = true;
@@ -373,22 +369,7 @@ export class ActionSettingsModal extends Modal {
       });
 
     if (this.pageIndex === 0) {
-      new Setting(this.contentEl)
-        .setName("显示")
-        .setDesc(
-          "如果启用，此操作将显示在空文件视图（新标签页）和\"快速操作\"中。",
-        )
-        .addToggle((toggle) => {
-          toggle
-            .setValue(this.modAction.display)
-            .onChange((value) => {
-              try {
-                this.modAction.display = value;
-              } catch (error) {
-                loggerOnError(error, "Error in settings.\n(About Blank)");
-              }
-            });
-        });
+      // 显示设置已被移除，所有按钮默认显示
     }
 
     new Setting(this.contentEl)
