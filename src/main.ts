@@ -58,6 +58,7 @@ import {
 import {
   COMMANDS,
   CSS_CLASSES,
+  DEFAULT_LOGO_SVG,
 } from "src/constants";
 
 import {
@@ -367,6 +368,9 @@ export default class AboutBlank extends Plugin {
       actionEl.setAttribute('aria-label', originalText);
     }
     
+    // Clear text and add icon container
+    actionEl.textContent = '';
+    actionEl.appendChild(iconContainer);
   };
 
   private alreadyAdded = (elements: HTMLElement[]): boolean => {
@@ -1626,10 +1630,9 @@ export default class AboutBlank extends Plugin {
       const root = document.documentElement;
       
       // Set logo image
+      let logoUrl: string;
       if (this.settings.logoEnabled && this.settings.logoPath) {
         // Convert file path to URL format
-        let logoUrl: string;
-        
         if (this.settings.logoPath.startsWith('http')) {
           logoUrl = `url("${this.settings.logoPath}")`;
         } else if (this.settings.logoPath.startsWith('data:image')) {
@@ -1651,7 +1654,10 @@ export default class AboutBlank extends Plugin {
             logoUrl = `url("app://local/${this.settings.logoPath}")`;
           }
         }
-        
+        root.style.setProperty('--about-blank-logo-image', logoUrl);
+      } else if (this.settings.logoEnabled) {
+        // Use default SVG when logo is enabled but no path is set
+        logoUrl = `url("${DEFAULT_LOGO_SVG}")`;
         root.style.setProperty('--about-blank-logo-image', logoUrl);
       } else {
         root.style.setProperty('--about-blank-logo-image', 'none');

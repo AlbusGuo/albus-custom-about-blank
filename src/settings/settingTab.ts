@@ -104,7 +104,7 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoPath: "",
   logoDirectory: "",
   logoStyle: "mask",
-  logoSize: 40,
+  logoSize: 350,
   logoOpacity: 0.4,
   
   showStats: false,
@@ -133,14 +133,6 @@ export const DEFAULT_SETTINGS_LIMIT: Partial<
   iconTextGap: {
     min: 0,
     max: 50,
-  },
-  logoSize: {
-    min: 20,
-    max: 1000,
-  },
-  logoOpacity: {
-    min: 0,
-    max: 1,
   },
 } as const;
 
@@ -176,28 +168,8 @@ export const settingsPropTypeCheck: {
   logoStyle: (value: unknown) => {
     return typeof value === "string" && ["mask", "original"].includes(value);
   },
-  logoSize: (value: unknown) => {
-    const limit = DEFAULT_SETTINGS_LIMIT.logoSize;
-    if (!limit || !Number.isFinite(limit.min) || !Number.isFinite(limit.max) || limit.min >= limit.max) {
-      return false;
-    }
-    if (!Number.isFinite(value)) {
-      return false;
-    }
-    const num = value as number;
-    return limit.min <= num && num <= limit.max;
-  },
-  logoOpacity: (value: unknown) => {
-    const limit = DEFAULT_SETTINGS_LIMIT.logoOpacity;
-    if (!limit || !Number.isFinite(limit.min) || !Number.isFinite(limit.max) || limit.min >= limit.max) {
-      return false;
-    }
-    if (!Number.isFinite(value)) {
-      return false;
-    }
-    const num = value as number;
-    return limit.min <= num && num <= limit.max;
-  },
+  logoSize: (value: unknown) => typeof value === "number" && Number.isFinite(value),
+  logoOpacity: (value: unknown) => typeof value === "number" && Number.isFinite(value),
   heatmapEnabled: (value: unknown) => isBool(value),
   heatmapDataSource: (value: unknown) => {
     return typeof value === "string" && ["frontmatter", "fileCreation"].includes(value);
@@ -574,49 +546,11 @@ export class AboutBlankSettingTab extends PluginSettingTab {
             });
         });
 
-        logoGroup.addSetting((logoSizeSetting) => {
-          let logoSizeInput: TextComponent;
-          logoSizeSetting
-            .setName("Logo 大小")
-            .setDesc(`设置 Logo 的尺寸 (像素范围: ${DEFAULT_SETTINGS_LIMIT.logoSize?.min}-${DEFAULT_SETTINGS_LIMIT.logoSize?.max})`)
-            .addText((text) => {
-              logoSizeInput = text;
-              text
-                .setPlaceholder(`例如: ${DEFAULT_SETTINGS.logoSize}`)
-                .setValue(this.plugin.settings.logoSize.toString())
-                .onChange(async (value) => {
-                  try {
-                    const num = adjustInt(parseFloat(value));
-                    if (!settingsPropTypeCheck.logoSize(num)) {
-                      return;
-                    }
-                    this.plugin.settings.logoSize = num;
-                  } catch (error) {
-                    loggerOnError(error, "设置中出现错误\n(About Blank)");
-                  }
-                });
-                
-              logoSizeInput.inputEl.addEventListener('blur', async () => {
-                try {
-                  const num = adjustInt(parseFloat(logoSizeInput.getValue()));
-                  if (!settingsPropTypeCheck.logoSize(num)) {
-                    logoSizeInput.setValue(this.plugin.settings.logoSize.toString());
-                    return;
-                  }
-                  this.plugin.settings.logoSize = num;
-                  await this.plugin.saveSettings();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
-              });
-            });
-        });
-
         logoGroup.addSetting((logoOpacitySetting) => {
           let logoOpacityInput: TextComponent;
           logoOpacitySetting
             .setName("Logo 透明度")
-            .setDesc(`设置Logo的透明度 (范围: ${DEFAULT_SETTINGS_LIMIT.logoOpacity?.min}-${DEFAULT_SETTINGS_LIMIT.logoOpacity?.max})`)
+            .setDesc("设置Logo的透明度 (范围: 0-1)")
             .addText((text) => {
               logoOpacityInput = text;
               text

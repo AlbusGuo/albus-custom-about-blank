@@ -26,7 +26,13 @@
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  flex-wrap: wrap; /* 允许容器内的项目换行 */
+  height: 40px;
+  width: 40px;
+}
+
+/* 隐藏自定义按钮中的文本标签 */
+.about-blank-button {
+  display: none;
 }
 
 /** - 将命令列表修改为按钮样式布局 */
@@ -52,6 +58,9 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action {
     width: 40px;
     border-radius: 4px;
     flex-shrink: 0; /* 防止按钮被压缩 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 body .workspace-leaf-content[data-type="empty"] .empty-state-action:hover {
@@ -123,10 +132,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
 .about-blank-heatmap-controls:hover .about-blank-heatmap-year-display {
   opacity: 1;
   transform: scale(1);
-}
-
-.about-blank-button-container:has(.svg-icon) .about-blank-button {
-  padding-left: var(--about-blank-icon-text-gap);
 }
 
 /** - Adjust the position of the action list. */

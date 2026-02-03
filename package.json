@@ -1,6 +1,6 @@
 {
   "name": "albus-custom-about-blank",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "description": "允许用户高度自定义新标签页的一款插件",
   "main": "main.js",
   "scripts": {
