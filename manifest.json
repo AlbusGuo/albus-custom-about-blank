@@ -1,9 +1,9 @@
 {
   "id": "albus-custom-about-blank",
   "name": "Custom About Blank",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "minAppVersion": "1.11.4",
-  "description": "自定义新标签页",
+  "description": "允许用户高度自定义新标签页的一款插件",
   "author": "Ai-Jani & Albus",
   "authorUrl": "https://github.com/AlbusGuo",
   "isDesktopOnly": false

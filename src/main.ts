@@ -96,11 +96,8 @@ export default class AboutBlank extends Plugin {
         if (this.settings.deleteActionListMarginTop) {
           editStyles.rewriteCssVars.emptyStateListMarginTop.centered();
         }
-        // Apply logo settings
         this.applyLogoSettings();
-        // Apply heatmap settings
         this.applyHeatmapSettings();
-        // Reset for lazy loading
         this.closeAllNewTabs();
       } else {
         editStyles.rewriteCssVars.emptyStateDisplay.default();
@@ -133,7 +130,6 @@ export default class AboutBlank extends Plugin {
   };
 
   onunload() {
-    // Reset all New tabs
     this.closeAllNewTabs();
   }
 
@@ -151,8 +147,6 @@ export default class AboutBlank extends Plugin {
     await this.saveData(this.settings);
     this.applyLogoSettings();
     this.applyHeatmapSettings();
-    // 不再自动关闭新标签页，避免影响设置界面
-    // this.closeAllNewTabs();
   };
 
   // 保存设置但不刷新页面
@@ -165,7 +159,6 @@ export default class AboutBlank extends Plugin {
   registerCmdToObsidian = (action: PracticalAction): void => {
     if (typeof action.cmdId !== "string" || typeof action.name !== "string") {
       new Notice("命令注册失败\n(About Blank)");
-      // 命令注册失败，静默处理
       return;
     }
 
@@ -185,7 +178,6 @@ export default class AboutBlank extends Plugin {
       allActions = allActionsBloodline(this.settings.actions);
     }
     const registerActions = allActions.filter((action) => {
-      // Explicitly true
       return action.cmd === true;
     });
     const practicalActions: PracticalAction[] = registerActions
@@ -205,10 +197,10 @@ export default class AboutBlank extends Plugin {
   // However, since it works fine with Obsidian reload, it's not something absolutely have to avoid.
   // The arguments are the return value of the `allActionsBloodline()`.
   removeApplicableCmds = (allOriginalActions: Action[], allModifiedActions: Action[]): void => {
-    const cmdOrgActions = allOriginalActions.filter((action) => action.cmd ? true : false); // Safe side
+    const cmdOrgActions = allOriginalActions.filter((action) => action.cmd ? true : false);
     const orgCmdIds = cmdOrgActions.map((action) => action.cmdId);
 
-    const cmdModActions = allModifiedActions.filter((action) => action.cmd === true); // Safe side
+    const cmdModActions = allModifiedActions.filter((action) => action.cmd === true);
     const modCmdIds = cmdModActions.map((action) => action.cmdId);
 
     // Consider deleting or creating new actions, and think based on the Original.
@@ -261,11 +253,9 @@ export default class AboutBlank extends Plugin {
       if (!actionListEl) {
         return;
       }
-      // 移除所有自定义按钮
       const customButtons = actionListEl.querySelectorAll(`.${CSS_CLASSES.aboutBlankContainer}`);
       customButtons.forEach((button) => button.remove());
       
-      // 重新添加按钮（使用最新的顺序）
       const practicalActions: PracticalAction[] = this.settings.actions
         .map((action) => toPracticalAction(this.app, action))
         .filter((action) => action !== undefined);
@@ -285,7 +275,7 @@ export default class AboutBlank extends Plugin {
     this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
   };
 
-  addButtonsToNewTab = (emptyView: UnsafeEmptyView): void => {
+  private addButtonsToNewTab = (emptyView: UnsafeEmptyView): void => {
     try {
       const emptyActionListEl = emptyView.actionListEl;
       const emptyTitleEl = emptyView.emptyTitleEl;
@@ -304,7 +294,6 @@ export default class AboutBlank extends Plugin {
       const practicalActions: PracticalAction[] = this.settings.actions
         .map((action) => toPracticalAction(this.app, action))
         .filter((action) => action !== undefined);
-      // Expect: emptyActionListEl has `createEl()` method.
       practicalActions.forEach((action) => this.addActionButton(emptyActionListEl, action));
     } catch (error) {
       loggerOnError(error, "在空文件视图（新标签页）中添加按钮失败\n(About Blank)");
@@ -341,52 +330,43 @@ export default class AboutBlank extends Plugin {
   };
 
   private addLucideIconToDefaultAction = (actionEl: HTMLElement): void => {
-    // 检查是否已经添加了图标
     if (actionEl.querySelector('.about-blank-default-icon')) {
       return;
     }
     
-    // 获取原始文本内容作为悬浮提示
     const originalText = actionEl.textContent?.trim() || '';
     
-    // 创建图标容器
     const iconContainer = document.createElement('div');
     iconContainer.addClass('about-blank-default-icon');
     
-    // 根据action类型添加不同的图标
-    let iconName = 'file'; // 默认图标
+    let iconName = 'file';
     
     if (actionEl.classList.contains('mod-close')) {
-      iconName = 'x'; // 关闭按钮
+      iconName = 'x';
     } else if (originalText.includes('新建') || originalText.includes('New')) {
-      iconName = 'file-plus'; // 新建按钮
+      iconName = 'file-plus';
     } else if (originalText.includes('打开') || originalText.includes('Open')) {
-      iconName = 'folder'; // 打开按钮
+      iconName = 'folder';
     } else if (originalText.includes('今日') || originalText.includes('Today')) {
-      iconName = 'calendar-days'; // 今日按钮
+      iconName = 'calendar-days';
     } else if (originalText.includes('帮助') || originalText.includes('Help')) {
-      iconName = 'circle-help'; // 帮助按钮
+      iconName = 'circle-help';
     } else if (originalText.includes('文件夹') || originalText.includes('Folder')) {
-      iconName = 'folder-open'; // 文件夹相关
+      iconName = 'folder-open';
     } else if (originalText.includes('最近') || originalText.includes('Recent')) {
-      iconName = 'clock'; // 最近文件
+      iconName = 'clock';
     } else if (originalText.includes('工作区') || originalText.includes('Workspace')) {
-      iconName = 'layout'; // 工作区
+      iconName = 'layout';
     } else if (originalText.includes('模板') || originalText.includes('Template')) {
-      iconName = 'file-text'; // 模板
+      iconName = 'file-text';
     }
     
-    // 创建Lucide图标
     setIcon(iconContainer, iconName);
     
-    // 添加悬浮提示 - 使用 Obsidian 默认 tooltip
     if (originalText) {
       actionEl.setAttribute('aria-label', originalText);
     }
     
-    // 清空原始内容并添加图标
-    actionEl.empty();
-    actionEl.appendChild(iconContainer);
   };
 
   private alreadyAdded = (elements: HTMLElement[]): boolean => {
@@ -410,7 +390,6 @@ export default class AboutBlank extends Plugin {
       },
     );
     
-    // 添加悬浮提示 - 使用 Obsidian 默认 tooltip
     container.setAttribute('aria-label', action.name);
     
     if (!isFalsyString(action.icon)) {
@@ -1177,30 +1156,26 @@ export default class AboutBlank extends Plugin {
           // 性能优化：缓存容器尺寸计算结果
           const containerHeight = container.clientHeight || 400;
           
-          // logo固定在顶部，距离顶部约20%的位置
-          const logoActualY = containerHeight * 0.2;
+          // 直接使用容器的视觉中心作为 logo 中心的近似值
+          // 由于 logo 在页面中上部，使用容器高度的 33% 作为 logo 中心
+          const logoCenterY = containerHeight * 0.33;
           
-          // 计算每侧的气泡数量
-          const leftCount = Math.ceil(allStats.length / 2);
-          const rightCount = Math.floor(allStats.length / 2);
-          const maxBubblesPerSide = Math.max(leftCount, rightCount);
+          // 新布局策略：最多6行，超过的气泡继续往左右两侧扩展
+          const maxRowsPerSide = 6; // 最大行数
+          const verticalSpacing = 50; // 垂直间距
+          const horizontalSpacing = 25; // 水平列间距（紧凑布局）
           
-          // 计算气泡可用的垂直空间
-          const availableSpaceBelow = containerHeight - logoActualY - (logoSize / 2) - 100;
-          const availableSpaceAbove = logoActualY - (logoSize / 2) - 50;
+          // 计算需要多少列（左右各一侧）
+          const totalBubbles = orderedStats.length;
+          const bubblesPerColumn = maxRowsPerSide;
+          const totalColumns = Math.ceil(totalBubbles / (bubblesPerColumn * 2)); // 左右两侧
           
-          // 计算气泡分布策略
-          let adjustedSpacing = bubbleSpacing;
-          let distributeAbove = false;
+          // 计算当前实际需要的最大行数（单侧）
+          const actualMaxRows = Math.min(maxRowsPerSide, Math.ceil(totalBubbles / 2));
           
-          if (availableSpaceBelow < (maxBubblesPerSide - 1) * bubbleSpacing) {
-            if (availableSpaceAbove > availableSpaceBelow) {
-              distributeAbove = true;
-              adjustedSpacing = Math.min(bubbleSpacing, availableSpaceAbove / Math.max(maxBubblesPerSide - 1, 1));
-            } else {
-              adjustedSpacing = Math.min(bubbleSpacing, availableSpaceBelow / Math.max(maxBubblesPerSide - 1, 1));
-            }
-          }
+          // 计算气泡总高度并以 logo 为中心垂直居中
+          const totalHeight = (actualMaxRows - 1) * verticalSpacing;
+          const startY = logoCenterY - (totalHeight / 2);
           
           // 性能优化：使用 DocumentFragment 批量添加气泡
           const fragment = document.createDocumentFragment();
@@ -1209,29 +1184,24 @@ export default class AboutBlank extends Plugin {
           orderedStats.forEach((stat, index) => {
             if (!stat) return;
             
+            // 新的布局逻辑：
+            // - 左右交替放置
+            // - 每侧最多6行
+            // - 超过12个气泡时，继续向外扩展新的列
             const isLeft = index % 2 === 0;
-            const sideIndex = isLeft ? Math.floor(index / 2) : Math.floor(index / 2);
+            const sideIndex = Math.floor(index / 2); // 在当前侧的索引
+            const columnIndex = Math.floor(sideIndex / maxRowsPerSide); // 第几列
+            const rowIndex = sideIndex % maxRowsPerSide; // 在当前列的第几行
             
-            // 计算垂直位置
-            let verticalOffset;
-            if (maxBubblesPerSide === 1) {
-              verticalOffset = 0;
-            } else {
-              const totalSpan = (maxBubblesPerSide - 1) * adjustedSpacing;
-              verticalOffset = -totalSpan / 2 + (sideIndex * adjustedSpacing);
-            }
-            
-            // 计算最终位置
-            let finalY;
-            if (distributeAbove) {
-              finalY = logoActualY - (logoSize / 2) - sideMargin - Math.abs(verticalOffset);
-            } else {
-              finalY = logoActualY + (logoSize / 2) + sideMargin + verticalOffset;
-            }
+            // 计算垂直位置（以 logo 中心为基准，上下居中分布）
+            const finalY = startY + (rowIndex * verticalSpacing);
             
             // 性能优化：直接创建元素而不使用 createEl
             const bubble = document.createElement('div');
             bubble.className = isLeft ? 'about-blank-stats-bubble about-blank-stats-bubble-left' : 'about-blank-stats-bubble about-blank-stats-bubble-right';
+            
+            // 设置列索引（用于CSS中的水平偏移）
+            bubble.setAttribute('data-column', columnIndex.toString());
             
             // 设置拖拽属性
             bubble.setAttribute('draggable', 'true');
@@ -1342,9 +1312,15 @@ export default class AboutBlank extends Plugin {
                       }
                     }
                     
+                    // 交换列索引属性
+                    const draggedColumn = draggedBubble.getAttribute('data-column');
+                    const targetColumn = targetBubble.getAttribute('data-column');
+                    draggedBubble.setAttribute('data-column', targetColumn || '0');
+                    targetBubble.setAttribute('data-column', draggedColumn || '0');
+                    
                     // 添加交换动画效果
-                    draggedBubble.style.transition = 'top 0.3s ease';
-                    targetBubble.style.transition = 'top 0.3s ease';
+                    draggedBubble.style.transition = 'top 0.3s ease, left 0.3s ease, right 0.3s ease';
+                    targetBubble.style.transition = 'top 0.3s ease, left 0.3s ease, right 0.3s ease';
                     
                     // 移除过渡效果
                     setTimeout(() => {

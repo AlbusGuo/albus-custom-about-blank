@@ -1,10 +1,5 @@
 /** ## Root */
 
-/** - Global font style - 确保所有字体都不是斜体 */
-* {
-  font-style: normal !important;
-}
-
 /** - Unique CSS variables */
 :root {
   --about-blank-empty-state-display: none;
@@ -399,7 +394,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   display: flex;
   align-items: center;
   justify-content: center;
-  font-style: normal; /* 确保不是斜体 */
 }
 
 .about-blank-heatmap-month-indicator {
@@ -412,7 +406,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   cursor: pointer;
   color: var(--text-muted);
   left: 0;
-  font-style: normal; /* 确保不是斜体 */
 }
 
 .about-blank-heatmap-cell {
@@ -554,13 +547,11 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before
   
   .about-blank-heatmap-month {
     font-size: 9px;
-    font-style: normal; /* 确保不是斜体 */
   }
   
   .about-blank-heatmap-weekday {
     font-size: 8px;
     width: 20px;
-    font-style: normal; /* 确保不是斜体 */
   }
   
   .about-blank-heatmap-cell {
@@ -672,6 +663,32 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before
 
 .about-blank-stats-bubble-right {
   left: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+}
+
+/* 多列布局支持：根据 data-column 属性调整水平位置 */
+/* 紧凑布局：纯间距25px，假设气泡平均宽度100px */
+.about-blank-stats-bubble-left[data-column="1"] {
+  right: calc(50% + var(--about-blank-logo-size) / 2 + 140px);
+}
+
+.about-blank-stats-bubble-right[data-column="1"] {
+  left: calc(50% + var(--about-blank-logo-size) / 2 + 140px);
+}
+
+.about-blank-stats-bubble-left[data-column="2"] {
+  right: calc(50% + var(--about-blank-logo-size) / 2 + 265px);
+}
+
+.about-blank-stats-bubble-right[data-column="2"] {
+  left: calc(50% + var(--about-blank-logo-size) / 2 + 265px);
+}
+
+.about-blank-stats-bubble-left[data-column="3"] {
+  right: calc(50% + var(--about-blank-logo-size) / 2 + 390px);
+}
+
+.about-blank-stats-bubble-right[data-column="3"] {
+  left: calc(50% + var(--about-blank-logo-size) / 2 + 390px);
 }
 
 .about-blank-stats-bubble-label {
