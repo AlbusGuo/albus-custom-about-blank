@@ -1,6 +1,7 @@
 import {
   type App,
   Modal,
+  setIcon,
   TFile,
 } from "obsidian";
 
@@ -60,12 +61,7 @@ export class HeatmapFilesModal extends Modal {
       const iconContainer = fileItem.createEl('div', { 
         cls: 'about-blank-heatmap-files-item-icon' 
       });
-      iconContainer.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-        </svg>
-      `;
+      setIcon(iconContainer, 'file-text');
 
       // 文件信息容器
       const fileInfoContainer = fileItem.createEl('div', { 

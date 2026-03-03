@@ -162,7 +162,7 @@ const generateFileCallback = (
 
   const basicCallback = async (): Promise<void> => {
     // Prevent creating a new file.
-    if (!app.vault.getFiles().map((file) => file.path).includes(normalizedPath)) {
+    if (!app.vault.getAbstractFileByPath(normalizedPath)) {
       new Notice(`文件未找到：${fileName} (${normalizedPath})`);
       return;
     }

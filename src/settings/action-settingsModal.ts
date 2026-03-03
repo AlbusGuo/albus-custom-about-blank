@@ -37,10 +37,6 @@ import {
 import isFalsyString from "src/utils/isFalsyString";
 
 import {
-  objectDeepCopy,
-} from "src/utils/objectDeepCopy";
-
-import {
   loggerOnError,
   setFakeIconToExButtonIfEmpty,
 } from "src/commons";
@@ -86,7 +82,7 @@ export class ActionSettingsModal extends Modal {
     this.actionsHolder = actionsHolder;
     this.actionIndex = actionIndex;
     this.orgAction = this.actionsHolder.actions[actionIndex];
-    this.modAction = objectDeepCopy(this.orgAction);
+    this.modAction = structuredClone(this.orgAction);
 
     if (this.pageIndex === 0) {
       this.parentsDisplay = true;

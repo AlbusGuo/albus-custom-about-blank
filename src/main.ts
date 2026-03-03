@@ -75,11 +75,21 @@ export default class AboutBlank extends Plugin {
   needToResisterActions: boolean;
   needToRemoveActions: boolean;
   needToResisterQuickActions: boolean;
-  
+
   // 性能优化：类级别的缓存
-  private statsCache: Array<{id: string, label: string, value: number | string}> | null = null;
+  private statsCache: Array<{id: string; label: string; value: number | string}> | null = null;
   private statsCacheTimestamp: number = 0;
-  private readonly STATS_CACHE_DURATION = 5000; // 增加到5秒缓存
+  private readonly STATS_CACHE_DURATION = 5000;
+
+  // 热力图/统计相关缓存
+  private heatmapDataCache: { [key: string]: number } | null = null;
+  private heatmapYearCache: { [year: number]: { [key: string]: number } } = {};
+  private heatmapRenderInterval: number | null = null;
+  private heatmapObserver: MutationObserver | null = null;
+  private globalRenderHeatmap: (() => void) | null = null;
+  private globalRenderStats: (() => void) | null = null;
+  private globalRenderStatsImmediate: (() => void) | null = null;
+  private workspaceEventsRegistered = false;
 
   async onload() {
     try {
@@ -97,8 +107,6 @@ export default class AboutBlank extends Plugin {
         if (this.settings.deleteActionListMarginTop) {
           editStyles.rewriteCssVars.emptyStateListMarginTop.centered();
         }
-        this.applyLogoSettings();
-        this.applyHeatmapSettings();
         this.closeAllNewTabs();
       } else {
         editStyles.rewriteCssVars.emptyStateDisplay.default();
@@ -115,6 +123,13 @@ export default class AboutBlank extends Plugin {
   backBurner = async () => {
     try {
       await this.loadSettingsDeep();
+
+      // Logo 和热力图依赖 vault 文件索引, 必须在 onLayoutReady 后执行
+      if (this.settings.addActionsToNewTabs) {
+        this.applyLogoSettings();
+        this.applyHeatmapSettings();
+      }
+
       const allActions = allActionsBloodline(this.settings.actions);
       const hasCommandsToRegister = allActions.some((action) => {
         return action.cmd === true; // Explicitly true
@@ -131,6 +146,21 @@ export default class AboutBlank extends Plugin {
   };
 
   onunload() {
+    // registerInterval 自动清理定时器
+    this.heatmapRenderInterval = null;
+    // 清理 MutationObserver
+    if (this.heatmapObserver) {
+      this.heatmapObserver.disconnect();
+      this.heatmapObserver = null;
+    }
+    // 清理 CSS 变量
+    const root = document.documentElement;
+    root.style.removeProperty('--about-blank-heatmap-enabled');
+    root.style.removeProperty('--about-blank-logo-image');
+    root.style.removeProperty('--about-blank-logo-size');
+    root.style.removeProperty('--about-blank-logo-opacity');
+    root.style.removeProperty('--about-blank-logo-position');
+
     this.closeAllNewTabs();
   }
 
@@ -284,8 +314,6 @@ export default class AboutBlank extends Plugin {
         ? Array.from(emptyActionListEl.children) as HTMLElement[]
         : null;
       this.applyVisibleClass(emptyTitleEl, childElements);
-      this.applyLogoSettings();
-      this.applyHeatmapSettings();
       if (!emptyActionListEl || !childElements) {
         return;
       }
@@ -296,6 +324,19 @@ export default class AboutBlank extends Plugin {
         .map((action) => toPracticalAction(this.app, action))
         .filter((action) => action !== undefined);
       practicalActions.forEach((action) => this.addActionButton(emptyActionListEl, action));
+
+      // 为新打开的标签页应用 Logo 样式类
+      this.applyLogoClassToContainer(emptyActionListEl);
+
+      // 在按钮添加完成后，触发延迟渲染热力图和统计气泡
+      requestAnimationFrame(() => {
+        if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
+          this.globalRenderHeatmap();
+        }
+        if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStatsImmediate) {
+          this.globalRenderStatsImmediate();
+        }
+      });
     } catch (error) {
       loggerOnError(error, "在空文件视图（新标签页）中添加按钮失败\n(About Blank)");
     }
@@ -601,9 +642,9 @@ export default class AboutBlank extends Plugin {
         heatmapContainers.forEach(container => container.remove());
         
         // 清除定期渲染
-        if ((this as any).heatmapRenderInterval) {
-          clearInterval((this as any).heatmapRenderInterval);
-          (this as any).heatmapRenderInterval = null;
+        if (this.heatmapRenderInterval) {
+          clearInterval(this.heatmapRenderInterval);
+          this.heatmapRenderInterval = null;
         }
       }
     } catch (error) {
@@ -612,6 +653,9 @@ export default class AboutBlank extends Plugin {
   };
 
   registerWorkspaceEvents = (): void => {
+    if (this.workspaceEventsRegistered) return;
+    this.workspaceEventsRegistered = true;
+
     // 监听工作区事件，确保在标签页切换时也能渲染热力图和统计气泡
     let leafChangeTimeout: NodeJS.Timeout | null = null;
     let isProcessingLeafChange = false;
@@ -629,13 +673,13 @@ export default class AboutBlank extends Plugin {
         isProcessingLeafChange = true;
         
         // 渲染热力图
-        if (this.settings.heatmapEnabled && (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-          (this as any).globalRenderHeatmap();
+        if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
+          this.globalRenderHeatmap();
         }
         
         // 渲染统计气泡（使用防抖）- 添加 logoEnabled 检查
-        if (this.settings.logoEnabled && this.settings.showStats && (this as any).globalRenderStats) {
-          (this as any).globalRenderStats();
+        if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStats) {
+          this.globalRenderStats();
         }
         
         // 重置处理状态
@@ -687,13 +731,13 @@ export default class AboutBlank extends Plugin {
               
               // 渲染热力图
               if (this.settings.heatmapEnabled && 
-                  (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-                (this as any).globalRenderHeatmap();
+                  this.globalRenderHeatmap && this.heatmapDataCache) {
+                this.globalRenderHeatmap();
               }
               
               // 渲染统计气泡 - 直接调用，不经过防抖
-              if (this.settings.logoEnabled && this.settings.showStats && (this as any).globalRenderStatsImmediate) {
-                (this as any).globalRenderStatsImmediate();
+              if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStatsImmediate) {
+                this.globalRenderStatsImmediate();
               }
               
               // 重置处理状态
@@ -710,13 +754,13 @@ export default class AboutBlank extends Plugin {
               
               // 渲染热力图
               if (this.settings.heatmapEnabled && 
-                  (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-                (this as any).globalRenderHeatmap();
+                  this.globalRenderHeatmap && this.heatmapDataCache) {
+                this.globalRenderHeatmap();
               }
               
               // 渲染统计气泡
-              if (this.settings.logoEnabled && this.settings.showStats && (this as any).globalRenderStats) {
-                (this as any).globalRenderStats();
+              if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStats) {
+                this.globalRenderStats();
               }
               
               // 重置处理状态
@@ -734,19 +778,19 @@ export default class AboutBlank extends Plugin {
       });
       
       // 保存observer引用以便清理
-      (this as any).heatmapObserver = observer;
+      this.heatmapObserver = observer;
     }
   };
 
   setupHeatmapPeriodicRender = (): void => {
     // 清除现有的定时器
-    if ((this as any).heatmapRenderInterval) {
-      clearInterval((this as any).heatmapRenderInterval);
+    if (this.heatmapRenderInterval) {
+      clearInterval(this.heatmapRenderInterval);
     }
     
     // 立即执行一次
-    if ((this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-      (this as any).globalRenderHeatmap();
+    if (this.globalRenderHeatmap && this.heatmapDataCache) {
+      this.globalRenderHeatmap();
     }
     
     // 添加防抖机制，避免频繁渲染
@@ -754,7 +798,7 @@ export default class AboutBlank extends Plugin {
     const renderDebounceTime = 3000; // 增加到3秒
     
     // 设置定期检查和渲染，但降低频率并添加条件检查
-    (this as any).heatmapRenderInterval = setInterval(() => {
+    this.heatmapRenderInterval = this.registerInterval(window.setInterval(() => {
       const now = Date.now();
       
       // 检查是否在防抖期内
@@ -774,11 +818,11 @@ export default class AboutBlank extends Plugin {
       });
       
       // 如果有新标签页且有缓存的数据，重新渲染
-      if (needsRender && (this as any).globalRenderHeatmap && (this as any).heatmapDataCache) {
-        (this as any).globalRenderHeatmap();
+      if (needsRender && this.globalRenderHeatmap && this.heatmapDataCache) {
+        this.globalRenderHeatmap();
         lastRenderTime = now;
       }
-    }, 5000); // 增加到5秒检查一次
+    }, 5000)); // 增加到5秒检查一次
   };
 
   // 获取指定日期的文件列表
@@ -876,11 +920,6 @@ export default class AboutBlank extends Plugin {
       
       // 渲染热力图
       this.renderHeatmap(dateCountMap);
-      
-      // 确保热力图在设置变更时也能更新
-      setTimeout(() => {
-        this.renderHeatmap(dateCountMap);
-      }, 50);
     } catch (error) {
       loggerOnError(error, "生成热力图数据失败\n(About Blank)");
     }
@@ -892,7 +931,7 @@ export default class AboutBlank extends Plugin {
       const colorSegments = this.settings.heatmapColorSegments;
       
       // 缓存数据供后续使用
-      (this as any).heatmapDataCache = dateCountMap;
+      this.heatmapDataCache = dateCountMap;
       
       const renderHeatmapInAllLeaves = () => {
         // 性能优化：批量查询所有需要的元素
@@ -932,14 +971,11 @@ export default class AboutBlank extends Plugin {
         });
       };
       
-      // 性能优化：立即渲染，但删除多余的重复渲染
+      // 性能优化：立即渲染
       renderHeatmapInAllLeaves();
       
-      // 只保留一次延迟渲染，确保DOM加载后显示
-      setTimeout(renderHeatmapInAllLeaves, 200);
-      
       // 设置全局热力图渲染函数，供后续调用
-      (this as any).globalRenderHeatmap = renderHeatmapInAllLeaves;
+      this.globalRenderHeatmap = renderHeatmapInAllLeaves;
       
     } catch (error) {
       loggerOnError(error, "渲染热力图失败\n(About Blank)");
@@ -1154,11 +1190,14 @@ export default class AboutBlank extends Plugin {
           const existingStats = container.querySelector('.about-blank-stats-bubbles');
           if (existingStats) return; // 已存在则跳过
 
+          // 确保容器已完成布局，避免气泡因高度为0而全部叠在一起
+          if (container.clientHeight < 100) return;
+
           // 创建统计气泡容器
           const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
 
-          // 性能优化：缓存容器尺寸计算结果
-          const containerHeight = container.clientHeight || 400;
+          // 使用容器实际高度计算位置
+          const containerHeight = container.clientHeight;
           
           // 直接使用容器的视觉中心作为 logo 中心的近似值
           // 由于 logo 在页面中上部，使用容器高度的 33% 作为 logo 中心
@@ -1364,8 +1403,8 @@ export default class AboutBlank extends Plugin {
         
         for (let i = 0; i < emptyLeaves.length; i++) {
           const leaf = emptyLeaves[i];
-          const container = leaf.querySelector('.empty-state-container');
-          if (container && container.querySelector('.empty-state-action-list')) {
+          const container = leaf.querySelector('.empty-state-container') as HTMLElement;
+          if (container && container.querySelector('.empty-state-action-list') && container.clientHeight >= 100) {
             hasReadyContainer = true;
             break;
           }
@@ -1384,8 +1423,8 @@ export default class AboutBlank extends Plugin {
       waitForReadyAndRender();
       
       // 设置全局统计渲染函数，供后续调用
-      (this as any).globalRenderStats = renderStatsInAllLeaves;
-      (this as any).globalRenderStatsImmediate = renderStatsImmediate; // 立即执行版本
+      this.globalRenderStats = renderStatsInAllLeaves;
+      this.globalRenderStatsImmediate = renderStatsImmediate; // 立即执行版本
       
     } catch (error) {
       loggerOnError(error, "渲染统计气泡失败\n(About Blank)");
@@ -1394,11 +1433,11 @@ export default class AboutBlank extends Plugin {
 
   changeHeatmapYear = (heatmapContainer: HTMLElement, newYear: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
     // 检查是否已经有该年份的缓存数据
-    if (!(this as any).heatmapYearCache) {
-      (this as any).heatmapYearCache = {};
+    if (!this.heatmapYearCache) {
+      this.heatmapYearCache = {};
     }
     
-    const yearCache = (this as any).heatmapYearCache;
+    const yearCache = this.heatmapYearCache;
     
     if (!yearCache[newYear]) {
       // 重新生成新年份的数据
@@ -1479,7 +1518,7 @@ export default class AboutBlank extends Plugin {
       const controlsContainer = heatmapContainer.createEl('div', { cls: 'about-blank-heatmap-controls' });
       
       const prevButton = controlsContainer.createEl('button', { cls: 'about-blank-heatmap-year-button about-blank-heatmap-year-prev' });
-      prevButton.innerHTML = '‹';
+      prevButton.textContent = '‹';
       prevButton.addEventListener('click', () => {
         this.changeHeatmapYear(heatmapContainer, year - 1, colorSegments, dateCountMap);
       });
@@ -1488,7 +1527,7 @@ export default class AboutBlank extends Plugin {
       yearDisplay.textContent = year.toString();
       
       const nextButton = controlsContainer.createEl('button', { cls: 'about-blank-heatmap-year-button about-blank-heatmap-year-next' });
-      nextButton.innerHTML = '›';
+      nextButton.textContent = '›';
       nextButton.addEventListener('click', () => {
         this.changeHeatmapYear(heatmapContainer, year + 1, colorSegments, dateCountMap);
       });
@@ -1554,7 +1593,7 @@ export default class AboutBlank extends Plugin {
               cellEl.setAttribute('aria-label', `${contributionItem.date}, 0 个文件`);
               
               // 添加点击事件 - 即使没有文件也可以点击查看
-              cellEl.style.cursor = 'pointer';
+              cellEl.addClass('clickable');
               cellEl.addEventListener('click', () => {
                 const files = this.getFilesForDate(contributionItem.date);
                 const modal = new HeatmapFilesModal(this.app, this, contributionItem.date, files);
@@ -1575,7 +1614,7 @@ export default class AboutBlank extends Plugin {
             cellEl.setAttribute('aria-label', `${contributionItem.date}, ${contributionItem.count} 个文件`);
             
             // 添加点击事件
-            cellEl.style.cursor = 'pointer';
+            cellEl.addClass('clickable');
             cellEl.addEventListener('click', () => {
               const files = this.getFilesForDate(contributionItem.date);
               const modal = new HeatmapFilesModal(this.app, this, contributionItem.date, files);
@@ -1623,6 +1662,16 @@ export default class AboutBlank extends Plugin {
     }
     
     return colorSegments[0].color;
+  };
+
+  // 为特定容器应用 Logo 样式类（用于新打开的标签页）
+  private applyLogoClassToContainer = (actionListEl: HTMLElement): void => {
+    if (!this.settings.logoEnabled) return;
+    const container = actionListEl.closest('.empty-state-container');
+    if (!container) return;
+    container.classList.remove('logo-top', 'logo-mask', 'logo-original');
+    container.classList.add('logo-top');
+    container.classList.add(`logo-${this.settings.logoStyle || 'mask'}`);
   };
 
   applyLogoSettings = (): void => {
@@ -1683,9 +1732,16 @@ export default class AboutBlank extends Plugin {
       
       // Create stats bubbles if logo and stats are enabled
       if (this.settings.logoEnabled && this.settings.showStats) {
+        // 清除现有统计气泡，以便用新设置重新渲染
+        document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
+        // 重置缓存以强制重新计算
+        this.statsCache = null;
         setTimeout(() => {
           this.createStatsBubbles();
         }, 150);
+      } else {
+        // Logo 或统计关闭时，移除现有气泡
+        document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
       }
       
       // Force a reflow to ensure styles are applied
@@ -1736,69 +1792,6 @@ export default class AboutBlank extends Plugin {
       
       const gridEl = modal.contentEl.createEl('div', { cls: 'about-blank-image-grid' });
       
-      // 添加样式
-      modal.contentEl.createEl('style', { text: `
-        .about-blank-search-container {
-          margin: 10px 0;
-          padding: 0 10px;
-        }
-        .about-blank-search-input {
-          width: 100%;
-          padding: 8px 12px;
-          border: 1px solid var(--background-modifier-border);
-          border-radius: 4px;
-          background-color: var(--background-primary);
-          color: var(--text-normal);
-          font-size: 14px;
-          outline: none;
-        }
-        .about-blank-search-input:focus {
-          border-color: var(--interactive-accent);
-        }
-        .about-blank-image-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-          gap: 15px;
-          max-height: 350px;
-          overflow-y: auto;
-          padding: 10px 0;
-        }
-        .about-blank-image-item {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 10px;
-          border: 2px solid transparent;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          background-color: var(--background-secondary);
-        }
-        .about-blank-image-item:hover {
-          border-color: var(--interactive-accent);
-          background-color: var(--background-modifier-hover);
-          transform: translateY(-2px);
-        }
-        .about-blank-image-item.selected {
-          border-color: var(--interactive-accent);
-          background-color: var(--background-modifier-hover);
-        }
-        .about-blank-image-preview {
-          width: 80px;
-          height: 80px;
-          object-fit: contain;
-          margin-bottom: 8px;
-          border-radius: 4px;
-        }
-        .about-blank-image-name {
-          font-size: 12px;
-          text-align: center;
-          word-break: break-all;
-          color: var(--text-muted);
-          line-height: 1.3;
-        }
-      `});
-      
       let selectedPath: string | null = null;
       
       // 存储所有图片元素用于搜索
@@ -1811,8 +1804,8 @@ export default class AboutBlank extends Plugin {
         const itemEl = gridEl.createEl('div', { cls: 'about-blank-image-item' });
         
         // 存储文件信息用于搜索
-        (itemEl as any).filePath = file.path;
-        (itemEl as any).fileName = file.name.toLowerCase();
+        itemEl.dataset.filePath = file.path;
+        itemEl.dataset.fileName = file.name.toLowerCase();
         
         // 创建图片预览
         const imgEl = itemEl.createEl('img', { cls: 'about-blank-image-preview' });
@@ -1846,19 +1839,11 @@ export default class AboutBlank extends Plugin {
         
         // 处理图片加载错误
         imgEl.addEventListener('error', () => {
-          // 图片加载失败
-          imgEl.style.display = 'none';
-          
-          // 创建一个占位符
-          const placeholderEl = itemEl.createEl('div', { 
-            cls: 'about-blank-image-preview',
+          imgEl.hide();
+          itemEl.createEl('div', { 
+            cls: 'about-blank-image-preview about-blank-image-placeholder',
             text: '📄'
           });
-          placeholderEl.style.display = 'flex';
-          placeholderEl.style.alignItems = 'center';
-          placeholderEl.style.justifyContent = 'center';
-          placeholderEl.style.fontSize = '24px';
-          placeholderEl.style.backgroundColor = 'var(--background-secondary)';
         });
         
         allImageItems.push(itemEl);
@@ -1869,7 +1854,7 @@ export default class AboutBlank extends Plugin {
         const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
         
         allImageItems.forEach(item => {
-          const fileName = (item as any).fileName;
+          const fileName = item.dataset.fileName ?? '';
           const shouldShow = !searchTerm || fileName.includes(searchTerm);
           item.style.display = shouldShow ? 'flex' : 'none';
         });
@@ -1903,11 +1888,7 @@ export default class AboutBlank extends Plugin {
       
       // 创建文件夹选择器
       const modal = new Modal(this.app);
-      
-      // 设置模态框样式，参考React组件的设计
-      modal.modalEl.style.width = '500px';
-      modal.modalEl.style.maxWidth = '90vw';
-      modal.modalEl.style.borderRadius = '8px';
+      modal.modalEl.addClass('about-blank-folder-modal');
       
       // 创建头部
       const headerEl = modal.contentEl.createEl('div', { cls: 'about-blank-folder-selector-header' });
@@ -1922,158 +1903,6 @@ export default class AboutBlank extends Plugin {
       });
       
       const listEl = modal.contentEl.createEl('div', { cls: 'about-blank-folder-list' });
-      
-      if (folders.length === 0) {
-        const emptyEl = listEl.createEl('div', { cls: 'about-blank-folder-empty' });
-        const iconContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-icon' });
-        setIcon(iconContainer, 'folder-x');
-        const textContainer = emptyEl.createEl('div', { cls: 'about-blank-empty-text' });
-        textContainer.textContent = '未找到任何文件夹';
-      }
-      
-      // 添加样式，参考React组件的设计风格
-      modal.contentEl.createEl('style', { text: `
-        .about-blank-folder-selector-header {
-          padding: 16px 20px;
-          border-bottom: 1px solid var(--background-modifier-border);
-        }
-        
-        .about-blank-folder-selector-header h3 {
-          margin: 0;
-          font-size: 16px;
-          font-weight: 600;
-          color: var(--text-normal);
-        }
-        
-        .about-blank-folder-search-container {
-          padding: 12px 20px;
-          border-bottom: 1px solid var(--background-modifier-border);
-        }
-        
-        .about-blank-folder-search-input {
-          width: 100%;
-          padding: 8px 12px;
-          border: 1px solid var(--background-modifier-border);
-          border-radius: 4px;
-          background-color: var(--background-primary);
-          color: var(--text-normal);
-          font-size: 14px;
-          outline: none;
-          transition: border-color 0.2s ease;
-        }
-        
-        .about-blank-folder-search-input:focus {
-          border-color: var(--interactive-accent);
-        }
-        
-        .about-blank-folder-list {
-          max-height: 300px;
-          overflow-y: auto;
-          padding: 8px 0;
-        }
-        
-        .about-blank-folder-item {
-          padding: 10px 20px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          transition: background-color 0.2s ease;
-          border-bottom: 1px solid transparent;
-        }
-        
-        .about-blank-folder-item:hover {
-          background: var(--background-modifier-hover);
-        }
-        
-        .about-blank-folder-item.selected {
-          background: var(--interactive-accent);
-          color: var(--text-on-accent);
-        }
-        
-        .about-blank-folder-item.selected .about-blank-folder-path {
-          color: var(--text-on-accent);
-          opacity: 0.8;
-        }
-        
-        .about-blank-folder-icon {
-          font-size: 16px;
-          width: 20px;
-          height: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-        
-        .about-blank-folder-info {
-          flex: 1;
-          min-width: 0;
-        }
-        
-        .about-blank-folder-name {
-          font-size: 14px;
-          font-weight: 500;
-          color: inherit;
-          margin-bottom: 2px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        
-        .about-blank-folder-path {
-          font-size: 12px;
-          color: var(--text-muted);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        
-        .about-blank-folder-empty {
-          padding: 40px 20px;
-          text-align: center;
-          color: var(--text-muted);
-          font-size: 14px;
-        }
-        
-        .about-blank-empty-icon {
-          font-size: 48px;
-          margin-bottom: 16px;
-          opacity: 0.5;
-          color: var(--text-muted);
-        }
-        
-        .about-blank-empty-text {
-          font-size: 16px;
-          margin-bottom: 8px;
-          color: var(--text-muted);
-        }
-        
-        .about-blank-empty-hint {
-          font-size: 12px;
-          margin-top: 8px;
-          opacity: 0.7;
-          color: var(--text-muted);
-        }
-        
-        /* 滚动条样式 */
-        .about-blank-folder-list::-webkit-scrollbar {
-          width: 6px;
-        }
-        
-        .about-blank-folder-list::-webkit-scrollbar-track {
-          background: var(--background-primary);
-        }
-        
-        .about-blank-folder-list::-webkit-scrollbar-thumb {
-          background: var(--background-modifier-border);
-          border-radius: 3px;
-        }
-        
-        .about-blank-folder-list::-webkit-scrollbar-thumb:hover {
-          background: var(--background-modifier-border-hover);
-        }
-      `});
       
       let selectedPath: string | null = null;
       
@@ -2093,8 +1922,8 @@ export default class AboutBlank extends Plugin {
         const itemEl = listEl.createEl('div', { cls: 'about-blank-folder-item' });
         
         // 存储文件夹信息用于搜索
-        (itemEl as any).folderPath = folder.path;
-        (itemEl as any).folderName = folder.name.toLowerCase();
+        itemEl.dataset.folderPath = folder.path;
+        itemEl.dataset.folderName = folder.name.toLowerCase();
         
         // 添加文件夹图标
         const iconEl = itemEl.createEl('div', { cls: 'about-blank-folder-icon' });
@@ -2137,8 +1966,8 @@ export default class AboutBlank extends Plugin {
         let visibleCount = 0;
         
         allFolderItems.forEach(item => {
-          const folderName = (item as any).folderName;
-          const folderPath = (item as any).folderPath.toLowerCase();
+          const folderName = item.dataset.folderName ?? '';
+          const folderPath = (item.dataset.folderPath ?? '').toLowerCase();
           const shouldShow = !searchTerm || folderName.includes(searchTerm) || folderPath.includes(searchTerm);
           item.style.display = shouldShow ? 'flex' : 'none';
           if (shouldShow) visibleCount++;

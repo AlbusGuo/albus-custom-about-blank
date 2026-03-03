@@ -42,10 +42,6 @@ import {
 import isBool from "src/utils/isBool";
 
 import {
-  objectDeepCopy,
-} from "src/utils/objectDeepCopy";
-
-import {
   adjustInt,
   loggerOnError,
   setFakeIconToExButtonIfEmpty,
@@ -201,7 +197,7 @@ export const settingsPropTypeCheck: {
 // =============================================================================
 
 export const defaultSettingsClone = (): AboutBlankSettings => {
-  return objectDeepCopy(DEFAULT_SETTINGS);
+  return structuredClone(DEFAULT_SETTINGS);
 };
 
 // =============================================================================
@@ -1110,7 +1106,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 this.plugin.settings.heatmapColorSegments[i].min = parseInt(value) || 0;
                 await this.plugin.saveSettings();
               });
-            text.inputEl.style.width = "80px";
+            text.inputEl.addClass('about-blank-input-narrow');
           });
 
           segmentSetting.addText((text) => {
@@ -1120,7 +1116,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 this.plugin.settings.heatmapColorSegments[i].max = parseInt(value) || 0;
                 await this.plugin.saveSettings();
               });
-            text.inputEl.style.width = "80px";
+            text.inputEl.addClass('about-blank-input-narrow');
           });
 
           segmentSetting.addColorPicker((colorPicker) => {

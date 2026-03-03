@@ -3,10 +3,6 @@ import {
 } from "obsidian";
 
 import {
-  v4 as uuidv4,
-} from "uuid";
-
-import {
   chooseKindAndContent,
 } from "src/settings/action-settings";
 
@@ -19,10 +15,6 @@ import {
 import isBool from "src/utils/isBool";
 
 import isFalsyString from "src/utils/isFalsyString";
-
-import {
-  objectDeepCopy,
-} from "src/utils/objectDeepCopy";
 
 import {
   LOOP_MAX,
@@ -147,19 +139,19 @@ export const actionPropTypeCheck: {
 // =============================================================================
 
 export const newContentOfCommandClone = (): ContentOfCommand => {
-  return objectDeepCopy(NEW_ACTION_CONTENT[ACTION_KINDS.command]);
+  return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.command]);
 };
 
 export const newContentOfFileClone = (): ContentOfFile => {
-  return objectDeepCopy(NEW_ACTION_CONTENT[ACTION_KINDS.file]);
+  return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.file]);
 };
 
 export const newContentOfGroupClone = (): ContentOfGroup => {
-  return objectDeepCopy(NEW_ACTION_CONTENT[ACTION_KINDS.group]);
+  return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.group]);
 };
 
 export const newActionClone = (): Action => {
-  return objectDeepCopy(NEW_ACTION);
+  return structuredClone(NEW_ACTION);
 };
 
 // If omit the `settings` argument, it will simply return the UUID.
@@ -201,14 +193,14 @@ export const allActionsBloodline = (actions: Action[]): Action[] => {
 // If a `settings` is provided, it checks for duplicates and returns a unique ID.
 export const genNewCmdId = (settings?: AboutBlankSettings): string => {
   if (settings === undefined) {
-    return uuidv4();
+    return crypto.randomUUID();
   }
 
   // Unique ID
   const allActions = allActionsBloodline(settings.actions);
   const currentCmdIds = allActions.map((action) => action.cmdId);
   for (let i = 0; i < LOOP_MAX; i++) {
-    const candidate = uuidv4();
+    const candidate = crypto.randomUUID();
     if (!currentCmdIds.includes(candidate)) {
       return candidate;
     }
