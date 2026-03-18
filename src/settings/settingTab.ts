@@ -6,6 +6,7 @@ import {
   Setting,
   SettingGroup,
   setIcon,
+  TFile,
   type TextComponent,
 } from "obsidian";
 
@@ -39,6 +40,14 @@ import {
   StringSuggesterAsync,
 } from "src/ui/stringSuggesterAsync";
 
+import {
+  FolderSuggester,
+} from "src/ui/folderSuggester";
+
+import {
+  ExtensionSuggester,
+} from "src/ui/extensionSuggester";
+
 import isBool from "src/utils/isBool";
 
 import {
@@ -64,6 +73,7 @@ export interface AboutBlankSettings {
   deleteActionListMarginTop: boolean;
   quickActions: boolean;
   quickActionsIcon: string;
+  showActionListImage: boolean;
   logoEnabled: boolean;
   logoPath: string;
   logoDirectory: string;
@@ -72,6 +82,9 @@ export interface AboutBlankSettings {
   logoOpacity: number;
   
   showStats: boolean;
+  showUsageDays: boolean;
+  showFileCount: boolean;
+  showStorageSize: boolean;
   obsidianStartDate: string;
   heatmapEnabled: boolean;
   heatmapDataSource: string;
@@ -96,6 +109,7 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   deleteActionListMarginTop: false,
   quickActions: false,
   quickActionsIcon: "",
+  showActionListImage: true,
   logoEnabled: false,
   logoPath: "",
   logoDirectory: "",
@@ -104,6 +118,9 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoOpacity: 0.4,
   
   showStats: false,
+  showUsageDays: true,
+  showFileCount: true,
+  showStorageSize: true,
   obsidianStartDate: "",
   heatmapEnabled: false,
   heatmapDataSource: "frontmatter",
@@ -118,7 +135,7 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   customStats: [],
   statOrder: [],
   actions: [],
-  settingsTab: "basic",
+  settingsTab: "shortcuts",
 } as const;
 
 export const DEFAULT_SETTINGS_LIMIT: Partial<
@@ -158,6 +175,7 @@ export const settingsPropTypeCheck: {
   deleteActionListMarginTop: (value: unknown) => isBool(value),
   quickActions: (value: unknown) => isBool(value),
   quickActionsIcon: (value: unknown) => typeof value === "string",
+  showActionListImage: (value: unknown) => isBool(value),
   logoEnabled: (value: unknown) => isBool(value),
   logoPath: (value: unknown) => typeof value === "string",
   logoDirectory: (value: unknown) => typeof value === "string",
@@ -189,6 +207,9 @@ export const settingsPropTypeCheck: {
     return Array.isArray(value) && value.every(item => typeof item === "string");
   },
   showStats: (value: unknown) => isBool(value),
+  showUsageDays: (value: unknown) => isBool(value),
+  showFileCount: (value: unknown) => isBool(value),
+  showStorageSize: (value: unknown) => isBool(value),
   obsidianStartDate: (value: unknown) => typeof value === "string",
   actions: (value: unknown) => Array.isArray(value),
   settingsTab: (value: unknown) => typeof value === "string",
@@ -225,36 +246,30 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       this.containerEl.addClass('about-blank-setting-ui');
 
       // 创建标签页导航
-      const tabNames = ["basic", "logo", "heatmap", "actions"];
+      const tabNames = ["shortcuts", "logo", "stats", "heatmap"];
       const tabLabels: Record<string, string> = {
-        basic: "基本设置",
-        logo: "Logo与统计",
-        heatmap: "热力图",
-        actions: "按钮"
+        shortcuts: "快捷方式",
+        logo: "Logo",
+        stats: "统计项目",
+        heatmap: "热力图"
       };
 
-      const tabsEl = this.containerEl.createEl("div", { cls: "about-blank-settings-tabs" });
+      const tabsEl = this.containerEl.createDiv({ cls: "about-blank-settings-tabs" });
       for (const tabName of tabNames) {
-        const button = tabsEl.createEl("button", { cls: "about-blank-settings-tab" });
-        if (this.plugin.settings.settingsTab === tabName) {
-          button.classList.add("about-blank-settings-tab-selected");
-        }
-        button.textContent = tabLabels[tabName];
-        button.onclick = async () => {
-          // 更新选中状态
-          tabsEl.querySelectorAll('.about-blank-settings-tab').forEach(btn => {
-            btn.classList.remove('about-blank-settings-tab-selected');
-          });
-          button.classList.add('about-blank-settings-tab-selected');
-          
+        const tab = tabsEl.createDiv({
+          cls: "about-blank-settings-tab"
+            + (this.plugin.settings.settingsTab === tabName ? " is-active" : "")
+        });
+        tab.setText(tabLabels[tabName]);
+        tab.addEventListener("click", async () => {
           this.plugin.settings.settingsTab = tabName;
           await this.plugin.saveSettings();
-          this.renderCurrentTab();
-        };
+          this.display();
+        });
       }
 
       // 创建内容区域容器
-      const contentEl = this.containerEl.createEl("div", { cls: "about-blank-settings-content" });
+      this.containerEl.createDiv({ cls: "about-blank-settings-content" });
       this.renderCurrentTab();
     } catch (error) {
       loggerOnError(error, "Error in settings.\n(About Blank)");
@@ -270,18 +285,18 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     
     contentEl.empty();
 
-    if (this.plugin.settings.settingsTab === "basic") {
-      this.makeSettingsBasic(contentEl as HTMLElement);
+    if (this.plugin.settings.settingsTab === "shortcuts") {
+      this.makeSettingsShortcuts(contentEl as HTMLElement);
     } else if (this.plugin.settings.settingsTab === "logo") {
       this.makeSettingsLogo(contentEl as HTMLElement);
+    } else if (this.plugin.settings.settingsTab === "stats") {
+      this.makeSettingsStats(contentEl as HTMLElement);
     } else if (this.plugin.settings.settingsTab === "heatmap") {
       this.makeSettingsHeatmap(contentEl as HTMLElement);
-    } else if (this.plugin.settings.settingsTab === "actions") {
-      this.makeSettingsActions(contentEl as HTMLElement);
     }
   };
 
-  private makeSettingsBasic = (containerEl: HTMLElement): void => {
+  private makeSettingsShortcuts = (containerEl: HTMLElement): void => {
     const basicGroup = new SettingGroup(containerEl);
 
     // 隐藏消息
@@ -416,14 +431,68 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           });
       });
     });
+
+    // 按钮栏图片开关
+    basicGroup.addSetting((pseudoImageSetting) => {
+      pseudoImageSetting
+        .setName("按钮栏装饰图片")
+        .setDesc("控制按钮栏右侧的装饰图片是否显示")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(this.plugin.settings.showActionListImage)
+            .onChange(async (value) => {
+              try {
+                this.plugin.settings.showActionListImage = value;
+                await this.plugin.saveSettings();
+              } catch (error) {
+                loggerOnError(error, "Error in settings.\n(About Blank)");
+              }
+            });
+        });
+    });
+
+    // 快捷方式标题
+    new Setting(containerEl)
+      .setName("快捷方式")
+      .setHeading();
+
+    const actionsGroup = new SettingGroup(containerEl);
+
+    // 如果没有按钮，显示空状态提示
+    if (this.plugin.settings.actions.length === 0) {
+      actionsGroup.addSetting((emptySetting) => {
+        emptySetting.setName('还没有添加任何按钮');
+        emptySetting.setDesc('点击下方的"添加新按钮"开始创建');
+      });
+    } else {
+      // 为每个按钮创建设置项
+      this.plugin.settings.actions.forEach((action, index) => {
+        this.createActionSetting(actionsGroup, action, index);
+      });
+    }
+
+    // 添加新按钮的按钮
+    actionsGroup.addSetting((addActionSetting) => {
+      addActionSetting.addButton((button) => {
+        button
+          .setButtonText('+ 添加新按钮')
+          .setCta()
+          .onClick(async () => {
+            const newAction = await createNewAction(this.app, '新按钮');
+            if (newAction) {
+              this.plugin.settings.actions.push(newAction);
+              await this.plugin.saveSettings();
+              if (this.plugin.settings.quickActions) {
+                this.plugin.registerQuickActions();
+              }
+              this.renderCurrentTab();
+            }
+          });
+      });
+    });
   };
 
   private makeSettingsLogo = (containerEl: HTMLElement): void => {
-    // Logo 设置标题（不在 group 内）
-    new Setting(containerEl)
-      .setName("Logo 设置")
-      .setHeading();
-
     const logoGroup = new SettingGroup(containerEl);
 
     logoGroup.addSetting((logoEnabledSetting) => {
@@ -581,19 +650,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         });
 
       }
+  };
 
-    // 统计气泡设置标题（不在 group 内）
-    new Setting(containerEl)
-      .setName("统计气泡设置")
-      .setHeading();
-
+  private makeSettingsStats = (containerEl: HTMLElement): void => {
     const statsGroup = new SettingGroup(containerEl);
 
     // 统计气泡开关
     statsGroup.addSetting((showStatsSetting) => {
       showStatsSetting
         .setName("显示统计气泡")
-        .setDesc("在 Logo 周围显示文件统计信息气泡")
+        .setDesc("在新标签页显示文件统计信息")
         .addToggle((toggle) => {
           toggle
             .setValue(this.plugin.settings.showStats)
@@ -610,39 +676,107 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     });
 
     if (this.plugin.settings.showStats) {
-      // Obsidian 开始使用日期
-      statsGroup.addSetting((startDateSetting) => {
-            let obsidianStartDateInput: TextComponent;
-            startDateSetting
-              .setName("Obsidian 开始使用日期")
-              .setDesc("用于计算使用 Obsidian 的天数")
-              .addText((text) => {
-                obsidianStartDateInput = text;
-                text
-                  .setPlaceholder("例如: 2025-12-19")
-                  .setValue(this.plugin.settings.obsidianStartDate)
-                  .onChange(async (value) => {
-                    try {
-                      this.plugin.settings.obsidianStartDate = value;
-                    } catch (error) {
-                      loggerOnError(error, "设置中出现错误\n(About Blank)");
-                    }
-                  });
-                  
-                obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
+      // 内置统计项标题
+      new Setting(containerEl)
+        .setName("内置项")
+        .setHeading();
+
+      const builtinGroup = new SettingGroup(containerEl);
+
+      builtinGroup.addSetting((usageDaysSetting) => {
+        usageDaysSetting
+          .setName("使用天数")
+          .setDesc("显示使用 Obsidian 的天数")
+          .addToggle((toggle) => {
+            toggle
+              .setValue(this.plugin.settings.showUsageDays)
+              .onChange(async (value) => {
+                try {
+                  this.plugin.settings.showUsageDays = value;
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+      });
+
+      if (this.plugin.settings.showUsageDays) {
+        // Obsidian 开始使用日期
+        builtinGroup.addSetting((startDateSetting) => {
+          let obsidianStartDateInput: TextComponent;
+          startDateSetting
+            .setName("Obsidian 开始使用日期")
+            .setDesc("用于计算使用 Obsidian 的天数")
+            .addText((text) => {
+              obsidianStartDateInput = text;
+              text
+                .setPlaceholder("例如: 2025-12-19")
+                .setValue(this.plugin.settings.obsidianStartDate)
+                .onChange(async (value) => {
                   try {
-                    await this.plugin.saveSettings();
+                    this.plugin.settings.obsidianStartDate = value;
                   } catch (error) {
                     loggerOnError(error, "设置中出现错误\n(About Blank)");
                   }
                 });
+                
+              obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
+                try {
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+            });
+        });
+      }
+
+      builtinGroup.addSetting((fileCountSetting) => {
+        fileCountSetting
+          .setName("文件数量")
+          .setDesc("显示仓库中的文件总数")
+          .addToggle((toggle) => {
+            toggle
+              .setValue(this.plugin.settings.showFileCount)
+              .onChange(async (value) => {
+                try {
+                  this.plugin.settings.showFileCount = value;
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
               });
           });
+      });
 
-      // 自定义统计项目
-      const statsContainer = containerEl.createEl('div', { cls: 'about-blank-stats-container' });
+      builtinGroup.addSetting((storageSizeSetting) => {
+        storageSizeSetting
+          .setName("存储空间")
+          .setDesc("显示仓库的总存储大小")
+          .addToggle((toggle) => {
+            toggle
+              .setValue(this.plugin.settings.showStorageSize)
+              .onChange(async (value) => {
+                try {
+                  this.plugin.settings.showStorageSize = value;
+                  await this.plugin.saveSettings();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+      });
+
+      // 自定义统计项目标题
+      new Setting(containerEl)
+        .setName("自定义")
+        .setHeading();
+
+      const customStatsGroup = new SettingGroup(containerEl);
+
       this.plugin.settings.customStats.forEach((stat, index) => {
-        statsGroup.addSetting((statSetting) => {
+        customStatsGroup.addSetting((statSetting) => {
           statSetting.setName(`统计项目 ${index + 1}`);
           statSetting.settingEl.addClass('about-blank-stat-setting');
           
@@ -653,18 +787,27 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               .setValue(stat.type)
               .onChange(async (value: "folder" | "fileType") => {
                 this.plugin.settings.customStats[index].type = value;
+                this.plugin.settings.customStats[index].value = '';
                 await this.plugin.saveSettings();
                 this.renderCurrentTab();
               });
           });
 
+          // 内联搜索式输入（参考 form-flow 设计）
           statSetting.addText((text) => {
-            text.setPlaceholder(stat.type === 'folder' ? "文件夹路径" : "文件扩展名")
+            text.setPlaceholder(stat.type === 'folder' ? "输入搜索文件夹..." : "输入搜索文件类型...")
               .setValue(stat.value)
               .onChange(async (value) => {
                 this.plugin.settings.customStats[index].value = value;
                 await this.plugin.saveSettings();
               });
+
+            // 为输入框附加内联建议
+            if (stat.type === 'folder') {
+              new FolderSuggester(this.app, text.inputEl);
+            } else {
+              new ExtensionSuggester(this.app, text.inputEl);
+            }
           });
 
           statSetting.addText((text) => {
@@ -689,7 +832,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       });
 
       // 添加新统计项目按钮
-      statsGroup.addSetting((addStatsSetting) => {
+      customStatsGroup.addSetting((addStatsSetting) => {
         addStatsSetting.addButton((button) => {
           button
             .setButtonText("+ 添加统计项目")
@@ -708,41 +851,15 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     }
   };
 
-  private makeSettingsActions = (containerEl: HTMLElement): void => {
-    const actionsGroup = new SettingGroup(containerEl);
-
-    // 如果没有按钮，显示空状态提示
-    if (this.plugin.settings.actions.length === 0) {
-      actionsGroup.addSetting((emptySetting) => {
-        emptySetting.setName('还没有添加任何按钮');
-        emptySetting.setDesc('点击下方的"添加新按钮"开始创建');
-      });
-    } else {
-      // 为每个按钮创建设置项
-      this.plugin.settings.actions.forEach((action, index) => {
-        this.createActionSetting(actionsGroup, action, index);
-      });
+  private getFileExtensions = (): string[] => {
+    const allFiles = this.app.vault.getAllLoadedFiles();
+    const extSet = new Set<string>();
+    for (const file of allFiles) {
+      if (file instanceof TFile && file.extension) {
+        extSet.add(file.extension);
+      }
     }
-
-    // 添加新按钮的按钮
-    actionsGroup.addSetting((addActionSetting) => {
-      addActionSetting.addButton((button) => {
-        button
-          .setButtonText('+ 添加新按钮')
-          .setCta()
-          .onClick(async () => {
-            const newAction = await createNewAction(this.app, '新按钮');
-            if (newAction) {
-              this.plugin.settings.actions.push(newAction);
-              await this.plugin.saveSettings();
-              if (this.plugin.settings.quickActions) {
-                this.plugin.registerQuickActions();
-              }
-              this.renderCurrentTab();
-            }
-          });
-      });
-    });
+    return Array.from(extSet).sort();
   };
 
   /**

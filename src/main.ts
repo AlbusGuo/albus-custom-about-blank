@@ -90,6 +90,7 @@ export default class AboutBlank extends Plugin {
   private globalRenderStats: (() => void) | null = null;
   private globalRenderStatsImmediate: (() => void) | null = null;
   private workspaceEventsRegistered = false;
+  private logoImageReady = false;
 
   async onload() {
     try {
@@ -129,6 +130,17 @@ export default class AboutBlank extends Plugin {
         this.applyLogoSettings();
         this.applyHeatmapSettings();
       }
+
+      // 监听 vault 索引完成事件，重新生成热力图数据
+      this.registerEvent(
+        this.app.metadataCache.on('resolved', () => {
+          if (this.settings.heatmapEnabled) {
+            this.heatmapDataCache = null;
+            this.heatmapYearCache = {};
+            this.generateHeatmapData();
+          }
+        })
+      );
 
       const allActions = allActionsBloodline(this.settings.actions);
       const hasCommandsToRegister = allActions.some((action) => {
@@ -176,6 +188,9 @@ export default class AboutBlank extends Plugin {
 
   saveSettings = async () => {
     await this.saveData(this.settings);
+    // 清除热力图缓存，确保下次渲染使用最新数据
+    this.heatmapDataCache = null;
+    this.heatmapYearCache = {};
     this.applyLogoSettings();
     this.applyHeatmapSettings();
   };
@@ -320,6 +335,17 @@ export default class AboutBlank extends Plugin {
       if (this.alreadyAdded(childElements)) {
         return;
       }
+
+      // 初始化加载状态：隐藏内容，显示加载动画
+      const container = emptyActionListEl.closest('.empty-state-container') as HTMLElement | null;
+      if (container && !container.classList.contains('about-blank-ready')) {
+        container.classList.add('about-blank-loading');
+        const loader = document.createElement('div');
+        loader.className = 'about-blank-loader';
+        loader.innerHTML = '<div class="about-blank-loader-spinner"></div>';
+        container.appendChild(loader);
+      }
+
       const practicalActions: PracticalAction[] = this.settings.actions
         .map((action) => toPracticalAction(this.app, action))
         .filter((action) => action !== undefined);
@@ -333,8 +359,16 @@ export default class AboutBlank extends Plugin {
         if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
           this.globalRenderHeatmap();
         }
-        if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStatsImmediate) {
+        if (this.settings.showStats && this.globalRenderStatsImmediate) {
           this.globalRenderStatsImmediate();
+        }
+
+        // 渲染完成：移除加载动画，显示内容
+        if (container) {
+          container.classList.remove('about-blank-loading');
+          const loaderEl = container.querySelector('.about-blank-loader');
+          if (loaderEl) loaderEl.remove();
+          container.classList.add('about-blank-ready');
         }
       });
     } catch (error) {
@@ -678,7 +712,7 @@ export default class AboutBlank extends Plugin {
         }
         
         // 渲染统计气泡（使用防抖）- 添加 logoEnabled 检查
-        if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStats) {
+        if (this.settings.showStats && this.globalRenderStats) {
           this.globalRenderStats();
         }
         
@@ -736,7 +770,7 @@ export default class AboutBlank extends Plugin {
               }
               
               // 渲染统计气泡 - 直接调用，不经过防抖
-              if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStatsImmediate) {
+              if (this.settings.showStats && this.globalRenderStatsImmediate) {
                 this.globalRenderStatsImmediate();
               }
               
@@ -759,7 +793,7 @@ export default class AboutBlank extends Plugin {
               }
               
               // 渲染统计气泡
-              if (this.settings.logoEnabled && this.settings.showStats && this.globalRenderStats) {
+              if (this.settings.showStats && this.globalRenderStats) {
                 this.globalRenderStats();
               }
               
@@ -795,7 +829,7 @@ export default class AboutBlank extends Plugin {
     
     // 添加防抖机制，避免频繁渲染
     let lastRenderTime = 0;
-    const renderDebounceTime = 3000; // 增加到3秒
+    const renderDebounceTime = 1000; // 1秒防抖
     
     // 设置定期检查和渲染，但降低频率并添加条件检查
     this.heatmapRenderInterval = this.registerInterval(window.setInterval(() => {
@@ -822,7 +856,7 @@ export default class AboutBlank extends Plugin {
         this.globalRenderHeatmap();
         lastRenderTime = now;
       }
-    }, 5000)); // 增加到5秒检查一次
+    }, 2000)); // 2秒检查一次
   };
 
   // 获取指定日期的文件列表
@@ -1097,11 +1131,11 @@ export default class AboutBlank extends Plugin {
   // 创建统计气泡
   createStatsBubbles = (): void => {
     try {
-      // 检查是否启用Logo和统计
-      if (!this.settings.logoEnabled || !this.settings.showStats) {
-        // 移除所有现有的统计气泡
-        const existingStatsContainers = document.querySelectorAll('.about-blank-stats-bubbles');
-        existingStatsContainers.forEach(container => container.remove());
+      // 检查是否启用统计
+      if (!this.settings.showStats) {
+        // 移除所有现有的统计气泡和内联统计条
+        document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
+        document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
         return;
       }
       
@@ -1112,12 +1146,17 @@ export default class AboutBlank extends Plugin {
           return this.statsCache;
         }
         
-        // 基础统计项目
-        const baseStats = [
-          { id: 'usage-days', label: "使用天数", value: this.calculateUsageDays() },
-          { id: 'file-count', label: "文件数量", value: this.calculateTotalFileCount() },
-          { id: 'storage-size', label: "存储空间", value: `${this.calculateTotalFileSize()}G` }
-        ];
+        // 基础统计项目（根据开关过滤）
+        const baseStats: Array<{id: string; label: string; value: number | string}> = [];
+        if (this.settings.showUsageDays) {
+          baseStats.push({ id: 'usage-days', label: "使用天数", value: this.calculateUsageDays() });
+        }
+        if (this.settings.showFileCount) {
+          baseStats.push({ id: 'file-count', label: "文件数量", value: this.calculateTotalFileCount() });
+        }
+        if (this.settings.showStorageSize) {
+          baseStats.push({ id: 'storage-size', label: "存储空间", value: `${this.calculateTotalFileSize()}G` });
+        }
 
         // 自定义统计项目
         const customStatsItems = (this.settings.customStats || []).map((stat: any, index: number) => ({
@@ -1172,216 +1211,13 @@ export default class AboutBlank extends Plugin {
         
         const orderedStats = getOrderedStats();
         
-        // 性能优化：预计算通用值
-        const logoSize = this.settings.logoSize || 120;
-        const bubbleSpacing = 50;
-        const sideMargin = 20;
-        
-        emptyLeaves.forEach(leaf => {
-          // 查找空状态容器
-          const container = leaf.querySelector('.empty-state-container') as HTMLElement;
-          if (!container) return;
-          
-          // 检查容器是否已经完全加载和渲染
-          const actionList = container.querySelector('.empty-state-action-list');
-          if (!actionList) return; // 等待action列表加载完成
-          
-          // 性能优化：检查是否已经有统计气泡，避免重复渲染
-          const existingStats = container.querySelector('.about-blank-stats-bubbles');
-          if (existingStats) return; // 已存在则跳过
-
-          // 确保容器已完成布局，避免气泡因高度为0而全部叠在一起
-          if (container.clientHeight < 100) return;
-
-          // 创建统计气泡容器
-          const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
-
-          // 使用容器实际高度计算位置
-          const containerHeight = container.clientHeight;
-          
-          // 直接使用容器的视觉中心作为 logo 中心的近似值
-          // 由于 logo 在页面中上部，使用容器高度的 33% 作为 logo 中心
-          const logoCenterY = containerHeight * 0.33;
-          
-          // 新布局策略：最多6行，超过的气泡继续往左右两侧扩展
-          const maxRowsPerSide = 6; // 最大行数
-          const verticalSpacing = 50; // 垂直间距
-          const horizontalSpacing = 25; // 水平列间距（紧凑布局）
-          
-          // 计算需要多少列（左右各一侧）
-          const totalBubbles = orderedStats.length;
-          const bubblesPerColumn = maxRowsPerSide;
-          const totalColumns = Math.ceil(totalBubbles / (bubblesPerColumn * 2)); // 左右两侧
-          
-          // 计算当前实际需要的最大行数（单侧）
-          const actualMaxRows = Math.min(maxRowsPerSide, Math.ceil(totalBubbles / 2));
-          
-          // 计算气泡总高度并以 logo 为中心垂直居中
-          const totalHeight = (actualMaxRows - 1) * verticalSpacing;
-          const startY = logoCenterY - (totalHeight / 2);
-          
-          // 性能优化：使用 DocumentFragment 批量添加气泡
-          const fragment = document.createDocumentFragment();
-          
-          // 创建统计气泡
-          orderedStats.forEach((stat, index) => {
-            if (!stat) return;
-            
-            // 新的布局逻辑：
-            // - 左右交替放置
-            // - 每侧最多6行
-            // - 超过12个气泡时，继续向外扩展新的列
-            const isLeft = index % 2 === 0;
-            const sideIndex = Math.floor(index / 2); // 在当前侧的索引
-            const columnIndex = Math.floor(sideIndex / maxRowsPerSide); // 第几列
-            const rowIndex = sideIndex % maxRowsPerSide; // 在当前列的第几行
-            
-            // 计算垂直位置（以 logo 中心为基准，上下居中分布）
-            const finalY = startY + (rowIndex * verticalSpacing);
-            
-            // 性能优化：直接创建元素而不使用 createEl
-            const bubble = document.createElement('div');
-            bubble.className = isLeft ? 'about-blank-stats-bubble about-blank-stats-bubble-left' : 'about-blank-stats-bubble about-blank-stats-bubble-right';
-            
-            // 设置列索引（用于CSS中的水平偏移）
-            bubble.setAttribute('data-column', columnIndex.toString());
-            
-            // 设置拖拽属性
-            bubble.setAttribute('draggable', 'true');
-            bubble.setAttribute('data-stat-id', stat.id);
-            
-            // 设置最终计算的位置
-            bubble.style.top = `${finalY}px`;
-            
-            // 创建统计内容
-            const label = document.createElement('div');
-            label.className = 'about-blank-stats-bubble-label';
-            label.textContent = stat.label;
-            
-            const value = document.createElement('div');
-            value.className = 'about-blank-stats-bubble-value';
-            value.textContent = stat.value.toString();
-            
-            bubble.appendChild(label);
-            bubble.appendChild(value);
-            
-            // 添加拖拽事件监听器
-            bubble.addEventListener('dragstart', (e) => {
-              e.dataTransfer?.setData('text/plain', stat.id);
-              bubble.classList.add('about-blank-stats-bubble-dragging');
-              e.dataTransfer!.effectAllowed = 'move';
-            });
-            
-            bubble.addEventListener('dragend', () => {
-              bubble.classList.remove('about-blank-stats-bubble-dragging');
-              // 移除所有拖拽悬停样式
-              document.querySelectorAll('.about-blank-stats-bubble-drag-over').forEach(el => {
-                el.classList.remove('about-blank-stats-bubble-drag-over');
-              });
-            });
-            
-            bubble.addEventListener('dragover', (e) => {
-              e.preventDefault();
-              e.dataTransfer!.dropEffect = 'move';
-              if (!bubble.classList.contains('about-blank-stats-bubble-drag-over')) {
-                bubble.classList.add('about-blank-stats-bubble-drag-over');
-              }
-            });
-            
-            bubble.addEventListener('dragleave', () => {
-              bubble.classList.remove('about-blank-stats-bubble-drag-over');
-            });
-            
-            bubble.addEventListener('drop', (e) => {
-              e.preventDefault();
-              bubble.classList.remove('about-blank-stats-bubble-drag-over');
-              
-              const draggedStatId = e.dataTransfer?.getData('text/plain');
-              const targetStatId = stat.id;
-              
-              if (draggedStatId && draggedStatId !== targetStatId) {
-                // 获取当前顺序
-                const currentOrder = this.settings.statOrder.length > 0 ? [...this.settings.statOrder] : orderedStats.map(s => s?.id || '');
-                
-                // 确保所有统计项目都在排序数组中
-                orderedStats.forEach(s => {
-                  if (s && !currentOrder.includes(s.id)) {
-                    currentOrder.push(s.id);
-                  }
-                });
-                
-                const draggedIndex = currentOrder.indexOf(draggedStatId);
-                const targetIndex = currentOrder.indexOf(targetStatId);
-                
-                if (draggedIndex !== -1 && targetIndex !== -1) {
-                  // 两个气泡互换位置
-                  const temp = currentOrder[draggedIndex];
-                  currentOrder[draggedIndex] = currentOrder[targetIndex];
-                  currentOrder[targetIndex] = temp;
-                  
-                  // 保存新顺序（静默保存，不刷新页面）
-                  this.settings.statOrder = currentOrder;
-                  this.saveSettingsSilent();
-                  
-                  // 只交换两个气泡的位置，避免全局重新渲染
-                  const allBubbles = Array.from(statsContainer.querySelectorAll('.about-blank-stats-bubble')) as HTMLElement[];
-                  const draggedBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === draggedStatId);
-                  const targetBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === targetStatId);
-                  
-                  if (draggedBubble && targetBubble) {
-                    // 交换两个气泡的位置
-                    const draggedTop = draggedBubble.style.top;
-                    const targetTop = targetBubble.style.top;
-                    
-                    // 交换位置
-                    draggedBubble.style.top = targetTop;
-                    targetBubble.style.top = draggedTop;
-                    
-                    // 交换左右类名
-                    const draggedHasLeft = draggedBubble.classList.contains('about-blank-stats-bubble-left');
-                    const targetHasLeft = targetBubble.classList.contains('about-blank-stats-bubble-left');
-                    
-                    if (draggedHasLeft !== targetHasLeft) {
-                      if (draggedHasLeft) {
-                        draggedBubble.classList.remove('about-blank-stats-bubble-left');
-                        draggedBubble.classList.add('about-blank-stats-bubble-right');
-                        targetBubble.classList.remove('about-blank-stats-bubble-right');
-                        targetBubble.classList.add('about-blank-stats-bubble-left');
-                      } else {
-                        draggedBubble.classList.remove('about-blank-stats-bubble-right');
-                        draggedBubble.classList.add('about-blank-stats-bubble-left');
-                        targetBubble.classList.remove('about-blank-stats-bubble-left');
-                        targetBubble.classList.add('about-blank-stats-bubble-right');
-                      }
-                    }
-                    
-                    // 交换列索引属性
-                    const draggedColumn = draggedBubble.getAttribute('data-column');
-                    const targetColumn = targetBubble.getAttribute('data-column');
-                    draggedBubble.setAttribute('data-column', targetColumn || '0');
-                    targetBubble.setAttribute('data-column', draggedColumn || '0');
-                    
-                    // 添加交换动画效果
-                    draggedBubble.style.transition = 'top 0.3s ease, left 0.3s ease, right 0.3s ease';
-                    targetBubble.style.transition = 'top 0.3s ease, left 0.3s ease, right 0.3s ease';
-                    
-                    // 移除过渡效果
-                    setTimeout(() => {
-                      draggedBubble.style.transition = '';
-                      targetBubble.style.transition = '';
-                    }, 300);
-                  }
-                }
-              }
-            });
-            
-            // 将气泡添加到 fragment
-            fragment.appendChild(bubble);
-          });
-          
-          // 性能优化：一次性将所有气泡添加到容器
-          statsContainer.appendChild(fragment);
-        });
+        if (this.settings.logoEnabled) {
+          // Logo 模式：浮动气泡布局
+          this.renderStatsBubbleMode(emptyLeaves, orderedStats);
+        } else {
+          // 非 Logo 模式：内联统计条
+          this.renderStatsInlineMode(emptyLeaves, orderedStats);
+        }
       };
       
       // 导出防抖渲染函数
@@ -1429,6 +1265,202 @@ export default class AboutBlank extends Plugin {
     } catch (error) {
       loggerOnError(error, "渲染统计气泡失败\n(About Blank)");
     }
+  };
+
+  private renderStatsBubbleMode = (emptyLeaves: NodeListOf<Element>, orderedStats: Array<{id: string; label: string; value: number | string} | undefined>): void => {
+    emptyLeaves.forEach(leaf => {
+      const container = leaf.querySelector('.empty-state-container') as HTMLElement;
+      if (!container) return;
+      const actionList = container.querySelector('.empty-state-action-list');
+      if (!actionList) return;
+      if (container.querySelector('.about-blank-stats-bubbles')) return;
+      if (container.clientHeight < 100) return;
+
+      const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
+      const containerHeight = container.clientHeight;
+      const logoCenterY = containerHeight * 0.33;
+      const maxRowsPerSide = 6;
+      const verticalSpacing = 50;
+      const totalBubbles = orderedStats.length;
+      const actualMaxRows = Math.min(maxRowsPerSide, Math.ceil(totalBubbles / 2));
+      const totalHeight = (actualMaxRows - 1) * verticalSpacing;
+      const startY = logoCenterY - (totalHeight / 2);
+
+      const fragment = document.createDocumentFragment();
+
+      orderedStats.forEach((stat, index) => {
+        if (!stat) return;
+
+        const isLeft = index % 2 === 0;
+        const sideIndex = Math.floor(index / 2);
+        const columnIndex = Math.floor(sideIndex / maxRowsPerSide);
+        const rowIndex = sideIndex % maxRowsPerSide;
+        const finalY = startY + (rowIndex * verticalSpacing);
+
+        const bubble = document.createElement('div');
+        bubble.className = isLeft ? 'about-blank-stats-bubble about-blank-stats-bubble-left' : 'about-blank-stats-bubble about-blank-stats-bubble-right';
+        bubble.setAttribute('data-column', columnIndex.toString());
+        bubble.setAttribute('draggable', 'true');
+        bubble.setAttribute('data-stat-id', stat.id);
+        bubble.style.top = `${finalY}px`;
+
+        const label = document.createElement('div');
+        label.className = 'about-blank-stats-bubble-label';
+        label.textContent = stat.label;
+
+        const value = document.createElement('div');
+        value.className = 'about-blank-stats-bubble-value';
+        value.textContent = stat.value.toString();
+
+        bubble.appendChild(label);
+        bubble.appendChild(value);
+
+        // 拖拽事件
+        bubble.addEventListener('dragstart', (e) => {
+          e.dataTransfer?.setData('text/plain', stat.id);
+          bubble.classList.add('about-blank-stats-bubble-dragging');
+          e.dataTransfer!.effectAllowed = 'move';
+        });
+        bubble.addEventListener('dragend', () => {
+          bubble.classList.remove('about-blank-stats-bubble-dragging');
+          document.querySelectorAll('.about-blank-stats-bubble-drag-over').forEach(el => el.classList.remove('about-blank-stats-bubble-drag-over'));
+        });
+        bubble.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer!.dropEffect = 'move';
+          bubble.classList.add('about-blank-stats-bubble-drag-over');
+        });
+        bubble.addEventListener('dragleave', () => {
+          bubble.classList.remove('about-blank-stats-bubble-drag-over');
+        });
+        bubble.addEventListener('drop', (e) => {
+          e.preventDefault();
+          bubble.classList.remove('about-blank-stats-bubble-drag-over');
+          const draggedStatId = e.dataTransfer?.getData('text/plain');
+          const targetStatId = stat.id;
+          if (draggedStatId && draggedStatId !== targetStatId) {
+            const currentOrder = this.settings.statOrder.length > 0 ? [...this.settings.statOrder] : orderedStats.map(s => s?.id || '');
+            orderedStats.forEach(s => { if (s && !currentOrder.includes(s.id)) currentOrder.push(s.id); });
+            const draggedIdx = currentOrder.indexOf(draggedStatId);
+            const targetIdx = currentOrder.indexOf(targetStatId);
+            if (draggedIdx !== -1 && targetIdx !== -1) {
+              const temp = currentOrder[draggedIdx];
+              currentOrder[draggedIdx] = currentOrder[targetIdx];
+              currentOrder[targetIdx] = temp;
+              this.settings.statOrder = currentOrder;
+              this.saveSettingsSilent();
+              // 交换气泡位置
+              const allBubbles = Array.from(statsContainer.querySelectorAll('.about-blank-stats-bubble')) as HTMLElement[];
+              const draggedBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === draggedStatId);
+              const targetBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === targetStatId);
+              if (draggedBubble && targetBubble) {
+                const dTop = draggedBubble.style.top;
+                draggedBubble.style.top = targetBubble.style.top;
+                targetBubble.style.top = dTop;
+                const dLeft = draggedBubble.classList.contains('about-blank-stats-bubble-left');
+                const tLeft = targetBubble.classList.contains('about-blank-stats-bubble-left');
+                if (dLeft !== tLeft) {
+                  draggedBubble.classList.toggle('about-blank-stats-bubble-left');
+                  draggedBubble.classList.toggle('about-blank-stats-bubble-right');
+                  targetBubble.classList.toggle('about-blank-stats-bubble-left');
+                  targetBubble.classList.toggle('about-blank-stats-bubble-right');
+                }
+                const dCol = draggedBubble.getAttribute('data-column');
+                draggedBubble.setAttribute('data-column', targetBubble.getAttribute('data-column') || '0');
+                targetBubble.setAttribute('data-column', dCol || '0');
+                draggedBubble.style.transition = 'top 0.3s ease';
+                targetBubble.style.transition = 'top 0.3s ease';
+                setTimeout(() => { draggedBubble.style.transition = ''; targetBubble.style.transition = ''; }, 300);
+              }
+            }
+          }
+        });
+
+        fragment.appendChild(bubble);
+      });
+
+      statsContainer.appendChild(fragment);
+    });
+  };
+
+  private renderStatsInlineMode = (emptyLeaves: NodeListOf<Element>, orderedStats: Array<{id: string; label: string; value: number | string} | undefined>): void => {
+    emptyLeaves.forEach(leaf => {
+      const container = leaf.querySelector('.empty-state-container') as HTMLElement;
+      if (!container) return;
+      const actionList = container.querySelector('.empty-state-action-list');
+      if (!actionList) return;
+      // 避免重复渲染
+      if (container.querySelector('.about-blank-stats-inline')) return;
+
+      const inlineContainer = document.createElement('div');
+      inlineContainer.className = 'about-blank-stats-inline';
+
+      orderedStats.forEach(stat => {
+        if (!stat) return;
+        const item = document.createElement('div');
+        item.className = 'about-blank-stats-inline-item';
+        item.setAttribute('draggable', 'true');
+        item.setAttribute('data-stat-id', stat.id);
+
+        const value = document.createElement('div');
+        value.className = 'about-blank-stats-inline-value';
+        value.textContent = stat.value.toString();
+
+        const label = document.createElement('div');
+        label.className = 'about-blank-stats-inline-label';
+        label.textContent = stat.label;
+
+        item.appendChild(value);
+        item.appendChild(label);
+
+        // 拖拽事件
+        item.addEventListener('dragstart', (e) => {
+          e.dataTransfer?.setData('text/plain', stat.id);
+          item.classList.add('about-blank-stats-inline-dragging');
+          e.dataTransfer!.effectAllowed = 'move';
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('about-blank-stats-inline-dragging');
+          inlineContainer.querySelectorAll('.about-blank-stats-inline-drag-over').forEach(el => el.classList.remove('about-blank-stats-inline-drag-over'));
+        });
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer!.dropEffect = 'move';
+          item.classList.add('about-blank-stats-inline-drag-over');
+        });
+        item.addEventListener('dragleave', () => {
+          item.classList.remove('about-blank-stats-inline-drag-over');
+        });
+        item.addEventListener('drop', (e) => {
+          e.preventDefault();
+          item.classList.remove('about-blank-stats-inline-drag-over');
+          const draggedStatId = e.dataTransfer?.getData('text/plain');
+          const targetStatId = stat.id;
+          if (draggedStatId && draggedStatId !== targetStatId) {
+            const currentOrder = this.settings.statOrder.length > 0 ? [...this.settings.statOrder] : orderedStats.map(s => s?.id || '');
+            orderedStats.forEach(s => { if (s && !currentOrder.includes(s.id)) currentOrder.push(s.id); });
+            const draggedIdx = currentOrder.indexOf(draggedStatId);
+            const targetIdx = currentOrder.indexOf(targetStatId);
+            if (draggedIdx !== -1 && targetIdx !== -1) {
+              const temp = currentOrder[draggedIdx];
+              currentOrder[draggedIdx] = currentOrder[targetIdx];
+              currentOrder[targetIdx] = temp;
+              this.settings.statOrder = currentOrder;
+              this.saveSettingsSilent();
+              // 重新渲染内联统计
+              document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
+              this.statsCache = null;
+              this.createStatsBubbles();
+            }
+          }
+        });
+
+        inlineContainer.appendChild(item);
+      });
+
+      // 插入到 action list 上方
+      actionList.parentNode?.insertBefore(inlineContainer, actionList);
+    });
   };
 
   changeHeatmapYear = (heatmapContainer: HTMLElement, newYear: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
@@ -1667,6 +1699,7 @@ export default class AboutBlank extends Plugin {
   // 为特定容器应用 Logo 样式类（用于新打开的标签页）
   private applyLogoClassToContainer = (actionListEl: HTMLElement): void => {
     if (!this.settings.logoEnabled) return;
+    if (!this.logoImageReady) return; // 图片未就绪时不添加类，避免显示空白色块
     const container = actionListEl.closest('.empty-state-container');
     if (!container) return;
     container.classList.remove('logo-top', 'logo-mask', 'logo-original');
@@ -1680,11 +1713,14 @@ export default class AboutBlank extends Plugin {
       
       // Set logo image
       let logoUrl: string;
+      let rawImageUrl: string | null = null; // 用于预加载的原始图片URL
       if (this.settings.logoEnabled && this.settings.logoPath) {
         // Convert file path to URL format
         if (this.settings.logoPath.startsWith('http')) {
+          rawImageUrl = this.settings.logoPath;
           logoUrl = `url("${this.settings.logoPath}")`;
         } else if (this.settings.logoPath.startsWith('data:image')) {
+          // data URI 不需要预加载
           logoUrl = `url("${this.settings.logoPath}")`;
         } else {
           // Handle Obsidian relative paths
@@ -1693,14 +1729,17 @@ export default class AboutBlank extends Plugin {
             if (file) {
               // 使用Obsidian的资源路径API
               const resourcePath = this.app.vault.getResourcePath(file as TFile);
+              rawImageUrl = resourcePath;
               logoUrl = `url("${resourcePath}")`;
             } else {
               // Fallback for relative paths
-              logoUrl = `url("app://local/${this.settings.logoPath}")`;
+              rawImageUrl = `app://local/${this.settings.logoPath}`;
+              logoUrl = `url("${rawImageUrl}")`;
             }
           } catch (error) {
             // Fallback for relative paths
-            logoUrl = `url("app://local/${this.settings.logoPath}")`;
+            rawImageUrl = `app://local/${this.settings.logoPath}`;
+            logoUrl = `url("${rawImageUrl}")`;
           }
         }
         root.style.setProperty('--about-blank-logo-image', logoUrl);
@@ -1717,32 +1756,54 @@ export default class AboutBlank extends Plugin {
       root.style.setProperty('--about-blank-logo-opacity', this.settings.logoOpacity.toString());
       root.style.setProperty('--about-blank-logo-position', 'top');
       
-      // Update container class for positioning and style
-      const emptyContainers = document.querySelectorAll('.workspace-leaf-content[data-type="empty"] .empty-state-container');
-      emptyContainers.forEach(container => {
-        // Remove existing position and style classes
-        container.classList.remove('logo-top', 'logo-mask', 'logo-original');
-        
-        // Add new position and style classes if logo is enabled
-        if (this.settings.logoEnabled) {
-          container.classList.add('logo-top');
-          container.classList.add(`logo-${this.settings.logoStyle || 'mask'}`);
-        }
-      });
+      // 应用 Logo class 的函数
+      const applyLogoClasses = () => {
+        this.logoImageReady = true;
+        const emptyContainers = document.querySelectorAll('.workspace-leaf-content[data-type="empty"] .empty-state-container');
+        emptyContainers.forEach(container => {
+          container.classList.remove('logo-top', 'logo-mask', 'logo-original');
+          if (this.settings.logoEnabled) {
+            container.classList.add('logo-top');
+            container.classList.add(`logo-${this.settings.logoStyle || 'mask'}`);
+          }
+        });
+      };
       
-      // Create stats bubbles if logo and stats are enabled
-      if (this.settings.logoEnabled && this.settings.showStats) {
-        // 清除现有统计气泡，以便用新设置重新渲染
+      if (this.settings.logoEnabled && rawImageUrl) {
+        // 需要预加载的外部/本地图片：图片就绪前不显示 Logo
+        this.logoImageReady = false;
+        const img = new Image();
+        img.onload = () => applyLogoClasses();
+        img.onerror = () => applyLogoClasses(); // 加载失败也显示（降级处理）
+        img.src = rawImageUrl;
+      } else if (this.settings.logoEnabled) {
+        // data URI 或默认SVG：直接就绪
+        applyLogoClasses();
+      } else {
+        // Logo 禁用
+        this.logoImageReady = false;
+        applyLogoClasses();
+      }
+      
+      // Create stats if enabled (now independent of Logo)
+      if (this.settings.showStats) {
+        // 清除现有统计元素，以便用新设置重新渲染
         document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
+        document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
         // 重置缓存以强制重新计算
         this.statsCache = null;
         setTimeout(() => {
           this.createStatsBubbles();
         }, 150);
       } else {
-        // Logo 或统计关闭时，移除现有气泡
+        // 统计关闭时，移除现有元素
         document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
+        document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
       }
+      
+      // 应用按钮栏装饰图片设置
+      const root2 = document.documentElement;
+      root2.style.setProperty('--about-blank-action-list-image-display', this.settings.showActionListImage ? 'block' : 'none');
       
       // Force a reflow to ensure styles are applied
       setTimeout(() => {

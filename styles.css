@@ -291,12 +291,12 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   mask-repeat: no-repeat;
   mask-image: var(--about-blank-logo-image);
   pointer-events: none;
-  opacity: var(--about-blank-logo-opacity);
   z-index: 1;
   min-width: 20px;
   min-height: 20px;
   max-width: none;
   max-height: none;
+  opacity: var(--about-blank-logo-opacity);
 }
 
 /** - Logo container for empty state - 原图样式 */
@@ -310,12 +310,12 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
   background-repeat: no-repeat;
   background-image: var(--about-blank-logo-image);
   pointer-events: none;
-  opacity: var(--about-blank-logo-opacity);
   z-index: 1;
   min-width: 20px;
   min-height: 20px;
   max-width: none;
   max-height: none;
+  opacity: var(--about-blank-logo-opacity);
 }
 
 /** - Logo position variations (仅支持top位置) */
@@ -442,6 +442,7 @@ body {
 
 body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before {
     content: "";
+    display: var(--about-blank-action-list-image-display, block);
     position: absolute;
     top: 11px;
     right: -64px;
@@ -792,57 +793,50 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list::before
 }
 /* 设置标签页样式 */
 .about-blank-settings-tabs {
+  display: flex;
+  justify-content: flex-start;
   border-bottom: 1px solid var(--background-modifier-border);
   overflow-x: auto;
-  white-space: nowrap;
-  margin-bottom: 20px;
-  display: flex;
-  gap: 4px;
+  padding: 0;
+  margin: 0 0 16px;
 }
 
-button.about-blank-settings-tab {
-  border: none;
-  box-shadow: none;
-  padding: 8px 16px;
-  background-color: transparent;
-  color: var(--text-muted);
+.about-blank-settings-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.about-blank-settings-tab {
+  padding: 4px 8px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-radius: 5px 5px 0 0;
   cursor: pointer;
-  transition: all 0.2s;
+  font-size: var(--font-ui-medium);
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color .1s ease;
   border-bottom: 2px solid transparent;
+  user-select: none;
 }
 
-button.about-blank-settings-tab-selected {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border-radius: 4px;
-}
-
-button.about-blank-settings-tab:not(.about-blank-settings-tab-selected):hover {
-  background-color: var(--interactive-hover);
+.about-blank-settings-tab:hover {
   color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.about-blank-settings-tab.is-active {
+  color: var(--text-normal);
+  font-weight: 600;
+  border-bottom-color: var(--interactive-accent);
 }
 
 /* 设置内容区域 */
 .about-blank-settings-content {
-  padding-top: 1em;
-}
-
-/* 紧凑型设置项样式 */
-.about-blank-settings-content .setting-item {
-  padding: 0.5em 0;
-}
-
-.about-blank-settings-content .setting-item:first-child {
   padding-top: 0;
 }
 
-/* 设置组样式 */
-.about-blank-settings-content .setting-group {
-  margin-bottom: 1.5em;
-}
-
-.about-blank-settings-content .setting-group:last-child {
-  margin-bottom: 0;
+.about-blank-settings-content .setting-group + .setting-item-heading {
+  margin-top: 1.5em;
 }
 
 /* 图标选择器样式 */
@@ -1208,4 +1202,245 @@ button.about-blank-settings-tab:not(.about-blank-settings-tab-selected):hover {
   width: 500px;
   max-width: 90vw;
   border-radius: 8px;
+}
+
+/* ===========================================================================
+   内联统计项样式（非Logo模式）— 错落浮动仪表盘
+   =========================================================================== */
+
+.about-blank-stats-inline {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 24px 28px;
+  flex-wrap: wrap;
+  width: 90%;
+  margin: 0 auto;
+}
+
+.about-blank-stats-inline-item {
+  --_hue: 0deg;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  padding: 16px 20px 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--background-secondary-alt) 70%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 40%, transparent);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+  cursor: grab;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.35s ease,
+              border-color 0.35s ease;
+  animation: about-blank-stat-float 4s ease-in-out infinite;
+}
+
+/* 波浪错落：奇偶交替上下偏移 */
+.about-blank-stats-inline-item:nth-child(odd) {
+  transform: translateY(-10px);
+}
+.about-blank-stats-inline-item:nth-child(even) {
+  transform: translateY(10px);
+}
+
+/* 每张卡片不同的浮动节奏 */
+.about-blank-stats-inline-item:nth-child(1) { animation-delay: 0s; }
+.about-blank-stats-inline-item:nth-child(2) { animation-delay: -1s; }
+.about-blank-stats-inline-item:nth-child(3) { animation-delay: -2s; }
+.about-blank-stats-inline-item:nth-child(4) { animation-delay: -0.5s; }
+.about-blank-stats-inline-item:nth-child(5) { animation-delay: -1.5s; }
+.about-blank-stats-inline-item:nth-child(6) { animation-delay: -2.5s; }
+
+/* 每张卡片独立的强调色 */
+.about-blank-stats-inline-item:nth-child(6n+1) { --_hue: 0deg; }
+.about-blank-stats-inline-item:nth-child(6n+2) { --_hue: 45deg; }
+.about-blank-stats-inline-item:nth-child(6n+3) { --_hue: 140deg; }
+.about-blank-stats-inline-item:nth-child(6n+4) { --_hue: 200deg; }
+.about-blank-stats-inline-item:nth-child(6n+5) { --_hue: 270deg; }
+.about-blank-stats-inline-item:nth-child(6n+6) { --_hue: 330deg; }
+
+/* 注册自定义属性，使 conic-gradient 角度可动画 */
+@property --_spread {
+  syntax: '<angle>';
+  initial-value: 50deg;
+  inherits: false;
+}
+
+/* 色带 — 默认左侧竖条，hover 时水流般延展为整圈边框 */
+.about-blank-stats-inline-item::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 3.5px;
+  --_spread: 50deg;
+  background: conic-gradient(
+    from 250deg at 50% 50%,
+    hsl(var(--_hue), 70%, 60%) 0deg,
+    hsl(var(--_hue), 70%, 60%, 0.4) var(--_spread),
+    transparent var(--_spread)
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0.85;
+  transition: --_spread 0.7s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+/* 底部微光 */
+.about-blank-stats-inline-item::after {
+  content: '';
+  position: absolute;
+  bottom: -30%;
+  left: 10%;
+  right: 10%;
+  height: 60%;
+  background: radial-gradient(ellipse at center, hsl(var(--_hue), 70%, 60%, 0.1), transparent 70%);
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  opacity: 0;
+}
+
+@keyframes about-blank-stat-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -5px; }
+}
+
+/* hover 效果 */
+.about-blank-stats-inline-item:hover {
+  animation-play-state: paused;
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.14),
+    0 0 24px hsl(var(--_hue), 70%, 60%, 0.15);
+  z-index: 3;
+}
+
+.about-blank-stats-inline-item:nth-child(odd):hover {
+  transform: translateY(-16px);
+}
+.about-blank-stats-inline-item:nth-child(even):hover {
+  transform: translateY(4px);
+}
+
+.about-blank-stats-inline-item:hover::before {
+  --_spread: 360deg;
+  opacity: 1;
+}
+
+.about-blank-stats-inline-item:hover::after {
+  opacity: 1;
+}
+
+.about-blank-stats-inline-item:active {
+  cursor: grabbing;
+}
+.about-blank-stats-inline-item:nth-child(odd):active {
+  transform: translateY(-12px) scale(0.98);
+}
+.about-blank-stats-inline-item:nth-child(even):active {
+  transform: translateY(8px) scale(0.98);
+}
+
+/* 拖拽状态 */
+.about-blank-stats-inline-dragging {
+  opacity: 0.2 !important;
+  transform: scale(0.85) rotate(-3deg) !important;
+  box-shadow: none !important;
+  animation-play-state: paused !important;
+}
+
+.about-blank-stats-inline-drag-over {
+  box-shadow:
+    0 0 0 2px hsl(var(--_hue), 70%, 60%, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+.about-blank-stats-inline-drag-over::before {
+  --_spread: 360deg !important;
+  opacity: 1 !important;
+}
+
+/* 数值 */
+.about-blank-stats-inline-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标签 */
+.about-blank-stats-inline-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  line-height: 1;
+  margin-top: 6px;
+}
+
+/* ===========================================================================
+   初始化加载动画
+   =========================================================================== */
+
+/* 加载中：隐藏实际内容 */
+.empty-state-container.about-blank-loading > *:not(.about-blank-loader) {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* 加载指示器 */
+.about-blank-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.about-blank-loader-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+  border-top-color: var(--interactive-accent);
+  animation: about-blank-spin 0.8s linear infinite;
+}
+
+@keyframes about-blank-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 就绪：淡入显示 */
+.empty-state-container.about-blank-ready > *:not(.about-blank-loader) {
+  animation: about-blank-reveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes about-blank-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
