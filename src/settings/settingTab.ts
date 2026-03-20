@@ -97,7 +97,7 @@ export interface AboutBlankSettings {
 export const DEFAULT_SETTINGS: AboutBlankSettings = {
   addActionsToNewTabs: true,
   iconTextGap: 10,
-  hideDefaultActions: HIDE_DEFAULT_ACTIONS.not,
+  hideDefaultActions: HIDE_DEFAULT_ACTIONS.all,
   centerActionListVertically: false,
   deleteActionListMarginTop: false,
   quickActions: false,
@@ -292,18 +292,19 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     // 隐藏默认按钮
     basicGroup.addSetting((hideDefaultSetting) => {
       hideDefaultSetting
-        .setName("隐藏默认按钮")
-        .setDesc("隐藏新标签页中的默认按钮")
-        .addDropdown((dropdown) => {
-          dropdown
-            .addOption("notHide", "不隐藏")
-            .addOption("onlyClose", "仅关闭按钮")
-            .addOption("all", "全部")
-            .setValue(this.plugin.settings.hideDefaultActions)
-            .onChange(async (value: "notHide" | "onlyClose" | "all") => {
+        .setName("隐藏默认快捷方式")
+        .setDesc("开启时隐藏默认快捷方式, 关闭时显示默认快捷方式")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(this.plugin.settings.hideDefaultActions !== HIDE_DEFAULT_ACTIONS.not)
+            .onChange(async (value) => {
               try {
-                this.plugin.settings.hideDefaultActions = value;
+                this.plugin.settings.hideDefaultActions = value
+                  ? HIDE_DEFAULT_ACTIONS.all
+                  : HIDE_DEFAULT_ACTIONS.not;
                 await this.plugin.saveSettings();
+                this.plugin.refreshAllNewTabs();
+                this.renderCurrentTab();
               } catch (error) {
                 loggerOnError(error, "Error in settings.\n(About Blank)");
               }
@@ -315,7 +316,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     basicGroup.addSetting((searchBoxSetting) => {
       searchBoxSetting
         .setName("搜索框")
-        .setDesc("在新标签页中嵌入 Obsidian 内置搜索框，开启后按钮列表将以卡片网格样式展示")
+        .setDesc("在新标签页中嵌入 Obsidian 内置搜索框, 开启后快捷方式列表将以卡片网格样式展示")
         .addToggle((toggle) => {
           toggle
             .setValue(this.plugin.settings.searchBoxEnabled)
@@ -336,7 +337,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       basicGroup.addSetting((pseudoImageSetting) => {
         pseudoImageSetting
           .setName("快捷方式列表装饰图片")
-          .setDesc("控制快捷方式列表右侧的装饰图片是否显示，仅在关闭搜索框时生效")
+          .setDesc("控制快捷方式列表右侧的装饰图片是否显示, 仅在关闭搜索框时生效")
           .addToggle((toggle) => {
             toggle
               .setValue(this.plugin.settings.showActionListImage)
@@ -355,7 +356,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
     // 快捷方式标题
     new Setting(containerEl)
-      .setName("快捷方式")
+      .setName("快捷方式列表")
       .setHeading();
 
     const actionsGroup = new SettingGroup(containerEl);
@@ -363,24 +364,24 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     // 如果没有按钮，显示空状态提示
     if (this.plugin.settings.actions.length === 0) {
       actionsGroup.addSetting((emptySetting) => {
-        emptySetting.setName('还没有添加任何按钮');
-        emptySetting.setDesc('点击下方的"添加新按钮"开始创建');
+        emptySetting.setName('还没有添加任何快捷方式');
+        emptySetting.setDesc('点击下方的"添加新快捷方式"开始创建');
       });
     } else {
-      // 为每个按钮创建设置项
+      // 为每个快捷方式创建设置项
       this.plugin.settings.actions.forEach((action, index) => {
         this.createActionSetting(actionsGroup, action, index);
       });
     }
 
-    // 添加新按钮的按钮
+    // 添加新快捷方式的按钮
     actionsGroup.addSetting((addActionSetting) => {
       addActionSetting.addButton((button) => {
         button
-          .setButtonText('+ 添加新按钮')
+          .setButtonText('+ 添加快捷方式')
           .setCta()
           .onClick(async () => {
-            const newAction = await createNewAction(this.app, '新按钮');
+            const newAction = await createNewAction(this.app, '新快捷方式');
             if (newAction) {
               this.plugin.settings.actions.push(newAction);
               await this.plugin.saveSettings();
@@ -565,10 +566,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsStats = (containerEl: HTMLElement): void => {
     const statsGroup = new SettingGroup(containerEl);
 
-    // 统计气泡开关
+    // 统计项目开关
     statsGroup.addSetting((showStatsSetting) => {
       showStatsSetting
-        .setName("显示统计气泡")
+        .setName("显示统计项目")
         .setDesc("在新标签页显示文件统计信息")
         .addToggle((toggle) => {
           toggle
@@ -588,14 +589,14 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     if (this.plugin.settings.showStats) {
       // 内置统计项标题
       new Setting(containerEl)
-        .setName("内置项")
+        .setName("内置统计项目")
         .setHeading();
 
       const builtinGroup = new SettingGroup(containerEl);
 
       builtinGroup.addSetting((usageDaysSetting) => {
         usageDaysSetting
-          .setName("使用天数")
+          .setName("Obsidian 使用天数")
           .setDesc("显示使用 Obsidian 的天数")
           .addToggle((toggle) => {
             toggle
@@ -618,12 +619,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         builtinGroup.addSetting((startDateSetting) => {
           let obsidianStartDateInput: TextComponent;
           startDateSetting
-            .setName("Obsidian 开始使用日期")
+            .setName("开始使用 Obsidian 的日期")
             .setDesc("用于计算使用 Obsidian 的天数")
             .addText((text) => {
               obsidianStartDateInput = text;
               text
-                .setPlaceholder("例如: 2025-12-19")
+                .setPlaceholder("例如 2025-12-19")
                 .setValue(this.plugin.settings.obsidianStartDate)
                 .onChange(async (value) => {
                   try {
@@ -682,7 +683,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
       // 自定义统计项目标题
       new Setting(containerEl)
-        .setName("自定义")
+        .setName("自定义统计项目")
         .setHeading();
 
       const customStatsGroup = new SettingGroup(containerEl);
@@ -747,7 +748,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       customStatsGroup.addSetting((addStatsSetting) => {
         addStatsSetting.addButton((button) => {
           button
-            .setButtonText("+ 添加统计项目")
+            .setButtonText("+ 添加自定义统计项目")
             .setCta()
             .onClick(async () => {
               this.plugin.settings.customStats.push({
@@ -783,14 +784,14 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       setting.settingEl.addClass('about-blank-action-setting');
       
       // 设置标签
-      setting.setName('按钮');
+      setting.setName('快捷方式');
       
       // 添加拖拽功能
       this.makeDraggable(setting.settingEl, index);
 
-      // 按钮名称
+      // 快捷方式名称
       setting.addText(text => text
-      .setPlaceholder('按钮名称')
+      .setPlaceholder('快捷方式名称')
       .setValue(action.name)
       .onChange(async (value) => {
         action.name = value;
@@ -800,7 +801,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     // 图标选择器
     this.addIconPicker(setting, action);
 
-    // 按钮类型下拉框
+    // 快捷方式类型下拉框
     setting.addDropdown(dropdown => dropdown
       .addOption('command', '命令')
       .addOption('file', '文件')
