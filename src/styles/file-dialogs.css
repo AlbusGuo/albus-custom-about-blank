@@ -1,0 +1,223 @@
+.about-blank-search-container {
+  margin: 10px 0;
+  padding: 0 10px;
+}
+
+.about-blank-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+  outline: none;
+}
+
+.about-blank-search-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.about-blank-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 15px;
+  max-height: 350px;
+  overflow-y: auto;
+  padding: 10px 0;
+}
+
+.about-blank-image-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: var(--background-secondary);
+}
+
+.about-blank-image-item:hover {
+  border-color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+  transform: translateY(-2px);
+}
+
+.about-blank-image-item.selected {
+  border-color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+}
+
+.about-blank-image-preview {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  margin-bottom: 8px;
+  border-radius: 4px;
+}
+
+.about-blank-image-name {
+  font-size: 12px;
+  text-align: center;
+  word-break: break-all;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.about-blank-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background-color: var(--background-secondary);
+}
+
+
+
+.about-blank-folder-selector-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.about-blank-folder-selector-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.about-blank-folder-search-container {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.about-blank-folder-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.about-blank-folder-search-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.about-blank-folder-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.about-blank-folder-item {
+  padding: 10px 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid transparent;
+}
+
+.about-blank-folder-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.about-blank-folder-item.selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.about-blank-folder-item.selected .about-blank-folder-path {
+  color: var(--text-on-accent);
+  opacity: 0.8;
+}
+
+.about-blank-folder-icon {
+  font-size: 16px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.about-blank-folder-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.about-blank-folder-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.about-blank-folder-path {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.about-blank-folder-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.about-blank-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+  color: var(--text-muted);
+}
+
+.about-blank-empty-text {
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+
+.about-blank-empty-hint {
+  font-size: 12px;
+  margin-top: 8px;
+  opacity: 0.7;
+  color: var(--text-muted);
+}
+
+.about-blank-folder-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.about-blank-folder-list::-webkit-scrollbar-track {
+  background: var(--background-primary);
+}
+
+.about-blank-folder-list::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+}
+
+.about-blank-folder-list::-webkit-scrollbar-thumb:hover {
+  background: var(--background-modifier-border-hover);
+}
+
+.about-blank-folder-modal {
+  width: 500px;
+  max-width: 90vw;
+  border-radius: 8px;
+}

@@ -2,9 +2,13 @@ import {
   type App,
   type Command,
   type View,
+  type Workspace,
+  type WorkspaceSplit,
 } from "obsidian";
 
 // =============================================================================
+
+export type ConstructableWorkspaceSplit = new (ws: Workspace, dir: "horizontal" | "vertical") => WorkspaceSplit;
 
 export const UNSAFE_CSS_CLASSES = {
   defaultEmptyAction: "empty-state-action tappable",

@@ -10,9 +10,7 @@ import {
   ACTION_KINDS,
   ACTION_KINDS_ICON,
   ACTION_KINDS_NAME,
-  allActionsBloodline,
   type ContentOfGroup,
-  genNewCmdId,
 } from "src/settings/action-basic";
 
 import {
@@ -51,6 +49,8 @@ import {
   type ValuesOf,
 } from "src/types";
 
+type ActionKind = ValuesOf<typeof ACTION_KINDS>;
+
 // =============================================================================
 
 export class ActionSettingsModal extends Modal {
@@ -86,9 +86,6 @@ export class ActionSettingsModal extends Modal {
 
     if (this.pageIndex === 0) {
       this.parentsDisplay = true;
-      this.plugin.needToResisterActions = false;
-      this.plugin.needToRemoveActions = false;
-      this.plugin.needToResisterQuickActions = false;
     } else {
       this.parentsDisplay = parentsDisplay === true; // Explicitly true
     }
@@ -118,45 +115,10 @@ export class ActionSettingsModal extends Modal {
   // ---------------------------------------------------------------------------
 
   saveAction = async (): Promise<void> => {
-    if (isFalsyString(this.modAction.cmdId)) {
-      this.modAction.cmdId = genNewCmdId();
-    }
-
-    if (this.modAction.cmd === true) {
-      this.plugin.needToResisterActions = true;
-    } else if (this.orgAction.cmd) {
-      this.plugin.needToRemoveActions = true;
-    }
-
-    if (this.plugin.settings.quickActions === true) {
-      if (this.pageIndex === 0) {
-        // Always register quick actions when enabled
-        this.plugin.needToResisterQuickActions = true;
-      } else {
-        if (this.parentsDisplay) {
-          this.plugin.needToResisterQuickActions = true;
-        }
-      }
-    }
-
     await this.organizeSettings();
   };
 
   deleteAction = async (): Promise<void> => {
-    if (this.orgAction.cmd || this.orgAction.content.kind === "group") {
-      this.plugin.needToRemoveActions = true;
-    }
-
-    if (this.plugin.settings.quickActions === true) {
-      if (this.pageIndex === 0) {
-        this.plugin.needToResisterQuickActions = true;
-      } else {
-        if (this.parentsDisplay) {
-          this.plugin.needToResisterQuickActions = true;
-        }
-      }
-    }
-
     await this.organizeSettings(true);
   };
 
@@ -178,28 +140,8 @@ export class ActionSettingsModal extends Modal {
       return;
     }
 
-    const allOrgActions = this.plugin.needToRemoveActions === false
-      ? null
-      : allActionsBloodline(this.actionsHolder.actions);
-
     reflector();
     await this.plugin.saveSettings();
-
-    if (this.plugin.settings.quickActions === true && this.plugin.needToResisterQuickActions) {
-      this.plugin.registerQuickActions();
-    }
-
-    if (this.plugin.needToResisterActions === false && this.plugin.needToRemoveActions === false) {
-      return;
-    }
-
-    const allModActions = allActionsBloodline(this.actionsHolder.actions);
-    if (this.plugin.needToRemoveActions) {
-      this.plugin.removeApplicableCmds(allOrgActions as Action[], allModActions);
-    }
-    if (this.plugin.needToResisterActions) {
-      this.plugin.registerAllCmdToObsidian(allModActions);
-    }
   };
 
   // ---------------------------------------------------------------------------
@@ -347,23 +289,6 @@ export class ActionSettingsModal extends Modal {
           });
       });
 
-    new Setting(this.contentEl)
-      .setName("注册为命令")
-      .setDesc(
-        "如果启用，此操作将在Obsidian中注册为命令。（可以从命令面板等执行）",
-      )
-      .addToggle((toggle) => {
-        toggle
-          .setValue(this.modAction.cmd)
-          .onChange((value) => {
-            try {
-              this.modAction.cmd = value;
-            } catch (error) {
-              loggerOnError(error, "Error in settings.\n(About Blank)");
-            }
-          });
-      });
-
     if (this.pageIndex === 0) {
       // 显示设置已被移除，所有按钮默认显示
     }
@@ -388,7 +313,7 @@ export class ActionSettingsModal extends Modal {
               const response = await new ConfirmDialogAsync(
                 this.app,
                 "Delete action",
-                `${this.modAction.name} (${ACTION_KINDS_NAME[this.modAction.content.kind]}: ${contentDetails})`,
+                `${this.modAction.name} (${ACTION_KINDS_NAME[this.modAction.content.kind as ActionKind]}: ${contentDetails})`,
               ).setDeleteCancel().openAndRespond();
               if (!response.result) {
                 return;

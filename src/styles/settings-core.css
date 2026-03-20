@@ -1,0 +1,66 @@
+.is-phone .about-blank-setting-action-header {
+  display: flex !important;
+  flex-direction: row !important;
+}
+
+.is-phone .about-blank-setting-action-header .setting-item-control {
+  width: min-content !important;
+}
+
+.about-blank-setting-action-content {
+  border-top: none;
+}
+
+.is-phone .about-blank-setting-action-content {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+}
+
+.about-blank-setting-action-content .setting-item-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0px;
+}
+
+.about-blank-setting-action-content .setting-item-control {
+  display: none;
+}
+
+.about-blank-setting-action-content-group {
+  border-top: none;
+}
+
+.about-blank-setting-action-save-notice {
+  border-top: none;
+  padding-top: 0px;
+}
+
+.is-phone .about-blank-setting-action-save-notice {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  padding-top: 0px !important;
+}
+
+.about-blank-setting-action-save-notice .setting-item-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0px;
+}
+
+.about-blank-setting-action-save-notice .setting-item-info .setting-item-description {
+  font-size: var(--font-ui-small);
+  color: var(--text-warning);
+}
+
+.about-blank-setting-action-save-notice .setting-item-control {
+  display: none;
+}
+
+
+.about-blank-icon-height-adjuster {
+  height: var(--input-height);
+}

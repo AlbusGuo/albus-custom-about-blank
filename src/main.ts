@@ -1,11 +1,11 @@
 import {
-  type Command,
   TFile,
   TFolder,
   Modal,
   Notice,
   Plugin,
   setIcon,
+  WorkspaceSplit,
 } from "obsidian";
 
 import {
@@ -13,7 +13,6 @@ import {
   ACTION_KINDS,
   actionPropTypeCheck,
   allActionsBloodline,
-  genNewCmdId,
   NEW_ACTION,
   newActionClone,
 } from "src/settings/action-basic";
@@ -42,13 +41,9 @@ import {
 
 import hasClassElements from "src/utils/hasClassElements";
 
-import hasDuplicates from "src/utils/hasDuplicates";
-
 import isFalsyString from "src/utils/isFalsyString";
 
 import isPlainObject from "src/utils/isPlainObject";
-
-import updateProp from "src/utils/updateProp";
 
 import {
   adjustInt,
@@ -56,7 +51,6 @@ import {
 } from "src/commons";
 
 import {
-  COMMANDS,
   CSS_CLASSES,
   DEFAULT_LOGO_SVG,
 } from "src/constants";
@@ -65,6 +59,8 @@ import {
   UNSAFE_CSS_CLASSES,
   UNSAFE_VIEW_TYPES,
   type UnsafeEmptyView,
+  type UnsafeApp,
+  type ConstructableWorkspaceSplit,
 } from "src/unsafe";
 
 import { HeatmapFilesModal } from "src/ui/heatmapFilesModal";
@@ -72,9 +68,6 @@ import { HeatmapFilesModal } from "src/ui/heatmapFilesModal";
 
 export default class AboutBlank extends Plugin {
   settings: AboutBlankSettings;
-  needToResisterActions: boolean;
-  needToRemoveActions: boolean;
-  needToResisterQuickActions: boolean;
 
   // 性能优化：类级别的缓存
   private statsCache: Array<{id: string; label: string; value: number | string}> | null = null;
@@ -92,28 +85,28 @@ export default class AboutBlank extends Plugin {
   private workspaceEventsRegistered = false;
   private logoImageReady = false;
 
+  // 初始化状态：backBurner 完成后设为 true
+  private pluginReady = false;
+
+  // 嵌入式搜索视图的清理列表
+  private embeddedSearchCleanups: Array<() => void> = [];
+
   async onload() {
     try {
       await this.loadSettingsShallow();
       this.app.workspace.onLayoutReady(this.backBurner);
 
-      if (this.settings.addActionsToNewTabs) {
-        this.registerEvent(
-          this.app.workspace.on("layout-change", this.addButtonsEventHandler),
-        );
-        editStyles.rewriteCssVars.iconTextGap.set(adjustInt(this.settings.iconTextGap));
-        if (this.settings.centerActionListVertically) {
-          editStyles.rewriteCssVars.emptyStateContainerMaxHeight.centered();
-        }
-        if (this.settings.deleteActionListMarginTop) {
-          editStyles.rewriteCssVars.emptyStateListMarginTop.centered();
-        }
-        this.closeAllNewTabs();
-      } else {
-        editStyles.rewriteCssVars.emptyStateDisplay.default();
-        editStyles.rewriteCssVars.emptyStateContainerMaxHeight.default();
-        editStyles.rewriteCssVars.emptyStateListMarginTop.default();
+      this.registerEvent(
+        this.app.workspace.on("layout-change", this.addButtonsEventHandler),
+      );
+      editStyles.rewriteCssVars.iconTextGap.set(adjustInt(this.settings.iconTextGap));
+      if (this.settings.centerActionListVertically) {
+        editStyles.rewriteCssVars.emptyStateContainerMaxHeight.centered();
       }
+      if (this.settings.deleteActionListMarginTop) {
+        editStyles.rewriteCssVars.emptyStateListMarginTop.centered();
+      }
+      this.closeAllNewTabs();
 
       this.addSettingTab(new AboutBlankSettingTab(this.app, this));
     } catch (error) {
@@ -126,10 +119,8 @@ export default class AboutBlank extends Plugin {
       await this.loadSettingsDeep();
 
       // Logo 和热力图依赖 vault 文件索引, 必须在 onLayoutReady 后执行
-      if (this.settings.addActionsToNewTabs) {
-        this.applyLogoSettings();
-        this.applyHeatmapSettings();
-      }
+      this.applyLogoSettings();
+      this.applyHeatmapSettings();
 
       // 监听 vault 索引完成事件，重新生成热力图数据
       this.registerEvent(
@@ -142,16 +133,9 @@ export default class AboutBlank extends Plugin {
         })
       );
 
-      const allActions = allActionsBloodline(this.settings.actions);
-      const hasCommandsToRegister = allActions.some((action) => {
-        return action.cmd === true; // Explicitly true
-      });
-      if (hasCommandsToRegister) {
-        this.registerAllCmdToObsidian(allActions);
-      }
-      if (this.settings.quickActions) {
-        this.registerQuickActions();
-      }
+      // 标记插件就绪，渲染所有已等待的新标签页
+      this.pluginReady = true;
+      this.renderAllPendingNewTabs();
     } catch (error) {
       loggerOnError(error, "设置加载失败\n(About Blank)");
     }
@@ -165,6 +149,9 @@ export default class AboutBlank extends Plugin {
       this.heatmapObserver.disconnect();
       this.heatmapObserver = null;
     }
+    // 清理嵌入式搜索视图
+    this.embeddedSearchCleanups.forEach((cleanup) => cleanup());
+    this.embeddedSearchCleanups = [];
     // 清理 CSS 变量
     const root = document.documentElement;
     root.style.removeProperty('--about-blank-heatmap-enabled');
@@ -202,80 +189,6 @@ export default class AboutBlank extends Plugin {
 
   // ---------------------------------------------------------------------------
 
-  registerCmdToObsidian = (action: PracticalAction): void => {
-    if (typeof action.cmdId !== "string" || typeof action.name !== "string") {
-      new Notice("命令注册失败\n(About Blank)");
-      return;
-    }
-
-    const commandConfig: Command = {
-      id: action.cmdId,
-      name: action.name,
-      callback: action.callback,
-    };
-    if (typeof action.icon === "string" && !isFalsyString(action.icon)) {
-      commandConfig.icon = action.icon;
-    }
-    this.addCommand(commandConfig);
-  };
-
-  registerAllCmdToObsidian = (allActions?: Action[]): void => {
-    if (allActions === undefined) {
-      allActions = allActionsBloodline(this.settings.actions);
-    }
-    const registerActions = allActions.filter((action) => {
-      return action.cmd === true;
-    });
-    const practicalActions: PracticalAction[] = registerActions
-      .map((action) => {
-        return toPracticalAction(this.app, action);
-      })
-      .filter((action) => action !== undefined);
-
-    practicalActions.forEach((action) => {
-      this.registerCmdToObsidian(action);
-    });
-  };
-
-  // Prerequisites for correct behavior:
-  // - No change in `cmdId` for the same action.
-  // - No duplicate `cmdIds`.
-  // However, since it works fine with Obsidian reload, it's not something absolutely have to avoid.
-  // The arguments are the return value of the `allActionsBloodline()`.
-  removeApplicableCmds = (allOriginalActions: Action[], allModifiedActions: Action[]): void => {
-    const cmdOrgActions = allOriginalActions.filter((action) => action.cmd ? true : false);
-    const orgCmdIds = cmdOrgActions.map((action) => action.cmdId);
-
-    const cmdModActions = allModifiedActions.filter((action) => action.cmd === true);
-    const modCmdIds = cmdModActions.map((action) => action.cmdId);
-
-    // Consider deleting or creating new actions, and think based on the Original.
-    const shouldRemoveCmdIds = orgCmdIds.filter((cmdId) => !modCmdIds.includes(cmdId));
-    shouldRemoveCmdIds.forEach((cmdId) => this.removeCommand(cmdId));
-  };
-
-  registerQuickActions = (): void => {
-    const registerAction = groupingActions(
-      this.app,
-      {
-        icon: this.settings.quickActionsIcon,
-        name: COMMANDS.quickActions.name,
-        cmd: true,
-        cmdId: COMMANDS.quickActions.id,
-      },
-      this.settings.actions,
-      `About Blank: ${COMMANDS.quickActions.name}`,
-    );
-    if (registerAction === undefined) {
-      return;
-    }
-    this.registerCmdToObsidian(registerAction);
-  };
-
-  unregisterQuickActions = (): void => {
-    this.removeCommand(COMMANDS.quickActions.id);
-  };
-
   // ---------------------------------------------------------------------------
 
   closeAllNewTabs = (): void => {
@@ -293,27 +206,54 @@ export default class AboutBlank extends Plugin {
     if (emptyLeaves.length === 0) {
       return;
     }
+
+    // 清理所有嵌入搜索视图
+    this.embeddedSearchCleanups.forEach((cleanup) => cleanup());
+    this.embeddedSearchCleanups = [];
+
     emptyLeaves.forEach((leaf) => {
       const emptyView = leaf.view as UnsafeEmptyView;
       const actionListEl = emptyView.actionListEl;
       if (!actionListEl) {
         return;
       }
+      // 移除自定义按钮
       const customButtons = actionListEl.querySelectorAll(`.${CSS_CLASSES.aboutBlankContainer}`);
       customButtons.forEach((button) => button.remove());
-      
-      const practicalActions: PracticalAction[] = this.settings.actions
-        .map((action) => toPracticalAction(this.app, action))
-        .filter((action) => action !== undefined);
-      
-      practicalActions.forEach((action) => this.addActionButton(actionListEl, action));
+      // 移除卡片网格标记
+      actionListEl.classList.remove('about-blank-card-grid');
+
+      const container = actionListEl.closest('.empty-state-container') as HTMLElement | null;
+      container?.classList.remove('about-blank-search-layout', 'about-blank-card-layout');
+      container?.classList.remove('about-blank-stats-bubble-mode', 'about-blank-stats-inline-mode');
+      container?.querySelectorAll('.about-blank-logo').forEach((el) => el.remove());
+      // 移除嵌入搜索视图
+      container?.querySelectorAll('.about-blank-embedded-search').forEach((el) => el.remove());
+      // 移除热力图容器（让 globalRenderHeatmap 重新创建）
+      container?.querySelectorAll('.about-blank-heatmap-container').forEach((el) => {
+        (el as HTMLElement).innerHTML = '';
+      });
+      // 移除统计气泡/内联统计
+      container?.querySelectorAll('.about-blank-stats-bubbles, .about-blank-stats-inline').forEach((el) => el.remove());
+      // 重置就绪状态以准备重新渲染
+      if (container) {
+        container.classList.remove('about-blank-ready');
+      }
     });
+
+    // 如果插件就绪，重新渲染所有标签页
+    if (this.pluginReady) {
+      emptyLeaves.forEach((leaf) => {
+        const emptyView = leaf.view as UnsafeEmptyView;
+        const actionListEl = emptyView.actionListEl;
+        if (!actionListEl) return;
+        const container = actionListEl.closest('.empty-state-container') as HTMLElement | null;
+        this.renderNewTabContent(emptyView, container);
+      });
+    }
   };
 
   private addButtonsEventHandler = (): void => {
-    if (!this.settings.addActionsToNewTabs) {
-      return;
-    }
     const leaf = this.app.workspace.getMostRecentLeaf();
     if (leaf?.view?.getViewType() !== UNSAFE_VIEW_TYPES.empty) {
       return;
@@ -336,50 +276,107 @@ export default class AboutBlank extends Plugin {
         return;
       }
 
-      // 初始化加载状态：隐藏内容，显示加载动画
       const container = emptyActionListEl.closest('.empty-state-container') as HTMLElement | null;
-      if (container && !container.classList.contains('about-blank-ready')) {
-        container.classList.add('about-blank-loading');
-        const loader = document.createElement('div');
-        loader.className = 'about-blank-loader';
-        loader.innerHTML = '<div class="about-blank-loader-spinner"></div>';
-        container.appendChild(loader);
+
+      if (!this.pluginReady) {
+        // 插件尚未就绪：显示进度条，等待 backBurner 完成后统一渲染
+        if (container && !container.classList.contains('about-blank-loading')) {
+          container.classList.add('about-blank-loading');
+          const loader = document.createElement('div');
+          loader.className = 'about-blank-loader';
+          loader.innerHTML = '<div class="about-blank-loader-bar"><div class="about-blank-loader-bar-fill"></div></div>';
+          container.appendChild(loader);
+        }
+        return;
       }
 
-      const practicalActions: PracticalAction[] = this.settings.actions
-        .map((action) => toPracticalAction(this.app, action))
-        .filter((action) => action !== undefined);
-      practicalActions.forEach((action) => this.addActionButton(emptyActionListEl, action));
-
-      // 为新打开的标签页应用 Logo 样式类
-      this.applyLogoClassToContainer(emptyActionListEl);
-
-      // 在按钮添加完成后，触发延迟渲染热力图和统计气泡
-      requestAnimationFrame(() => {
-        if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
-          this.globalRenderHeatmap();
-        }
-        if (this.settings.showStats && this.globalRenderStatsImmediate) {
-          this.globalRenderStatsImmediate();
-        }
-
-        // 渲染完成：移除加载动画，显示内容
-        if (container) {
-          container.classList.remove('about-blank-loading');
-          const loaderEl = container.querySelector('.about-blank-loader');
-          if (loaderEl) loaderEl.remove();
-          container.classList.add('about-blank-ready');
-        }
-      });
+      // 插件就绪：一次性渲染所有内容
+      this.renderNewTabContent(emptyView, container);
     } catch (error) {
       loggerOnError(error, "在空文件视图（新标签页）中添加按钮失败\n(About Blank)");
     }
   };
 
+  // 插件就绪后，统一渲染所有等待中的新标签页
+  private renderAllPendingNewTabs = (): void => {
+    const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
+    emptyLeaves.forEach((leaf) => {
+      const emptyView = leaf.view as UnsafeEmptyView;
+      const actionListEl = emptyView.actionListEl;
+      if (!actionListEl) return;
+      const container = actionListEl.closest('.empty-state-container') as HTMLElement | null;
+      // 已经渲染过的跳过
+      if (container?.classList.contains('about-blank-ready')) return;
+      this.renderNewTabContent(emptyView, container);
+    });
+  };
+
+  // 统一渲染：Logo + 统计 + 搜索框 + 按钮 + 热力图，按用户要求从上到下排列
+  private renderNewTabContent = (emptyView: UnsafeEmptyView, container: HTMLElement | null): void => {
+    const emptyActionListEl = emptyView.actionListEl;
+    if (!emptyActionListEl) return;
+
+    container?.classList.toggle('about-blank-search-layout', this.settings.searchBoxEnabled);
+    container?.classList.toggle('about-blank-card-layout', this.settings.searchBoxEnabled);
+
+    // 确保可见性
+    const childElements = Array.from(emptyActionListEl.children) as HTMLElement[];
+    this.applyVisibleClass(emptyView.emptyTitleEl, childElements);
+
+    // 如果已添加过自定义按钮则跳过
+    if (this.alreadyAdded(childElements)) {
+      if (container) {
+        container.classList.remove('about-blank-loading');
+        const loaderEl = container.querySelector('.about-blank-loader');
+        if (loaderEl) loaderEl.remove();
+        container.classList.add('about-blank-ready');
+      }
+      return;
+    }
+
+    // 1. 应用 Logo 样式（顶部）
+    this.applyLogoClassToContainer(emptyActionListEl);
+
+    // 2. 渲染统计（Logo 下方）
+      if (this.settings.showStats && this.globalRenderStatsImmediate) {
+        requestAnimationFrame(() => {
+          container?.querySelectorAll('.about-blank-stats-bubbles, .about-blank-stats-inline').forEach((el) => el.remove());
+          this.globalRenderStatsImmediate?.();
+        });
+    }
+
+    // 3. 嵌入搜索框（统计下方，按钮上方）
+    if (this.settings.searchBoxEnabled) {
+      this.createEmbeddedSearch(emptyActionListEl, emptyView);
+    }
+
+    // 4. 添加按钮（搜索框下方）
+    const practicalActions: PracticalAction[] = this.settings.actions
+      .map((action) => toPracticalAction(this.app, action))
+      .filter((action) => action !== undefined);
+    if (this.settings.searchBoxEnabled) {
+      this.addActionButtonsAsCards(emptyActionListEl, practicalActions);
+    } else {
+      emptyActionListEl.classList.remove('about-blank-card-grid');
+      practicalActions.forEach((action) => this.addActionButton(emptyActionListEl, action));
+    }
+
+    // 5. 渲染热力图（最底部，按钮下方）
+    if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
+      this.globalRenderHeatmap();
+    }
+
+    // 渲染完成：移除加载动画，淡入显示
+    if (container) {
+      container.classList.remove('about-blank-loading');
+      const loaderEl = container.querySelector('.about-blank-loader');
+      if (loaderEl) loaderEl.remove();
+      container.classList.add('about-blank-ready');
+    }
+  };
+
   private applyVisibleClass = (messageEl: HTMLElement | null, actionEls: HTMLElement[] | null): void => {
-    const messageIsTarget = messageEl && !this.settings.hideMessage
-      && !messageEl.classList.contains(CSS_CLASSES.visible);
-    if (messageIsTarget) {
+    if (messageEl && !messageEl.classList.contains(CSS_CLASSES.visible)) {
       messageEl.classList.add(CSS_CLASSES.visible);
     }
 
@@ -400,20 +397,20 @@ export default class AboutBlank extends Plugin {
       }
       elem.classList.add(CSS_CLASSES.visible);
       
-      // 为默认action添加Lucide图标
-      this.addLucideIconToDefaultAction(elem);
+      // 为默认 action 应用统一图标/卡片结构
+      this.addLucideIconToDefaultAction(elem, this.settings.searchBoxEnabled);
     });
   };
 
-  private addLucideIconToDefaultAction = (actionEl: HTMLElement): void => {
-    if (actionEl.querySelector('.about-blank-default-icon')) {
-      return;
+  private addLucideIconToDefaultAction = (actionEl: HTMLElement, cardLayout: boolean): void => {
+    const storedLabel = actionEl.dataset.aboutBlankDefaultLabel?.trim();
+    const currentText = actionEl.textContent?.trim() || '';
+    const originalText = storedLabel || currentText || actionEl.getAttribute('aria-label') || '';
+
+    if (originalText) {
+      actionEl.dataset.aboutBlankDefaultLabel = originalText;
+      actionEl.setAttribute('aria-label', originalText);
     }
-    
-    const originalText = actionEl.textContent?.trim() || '';
-    
-    const iconContainer = document.createElement('div');
-    iconContainer.addClass('about-blank-default-icon');
     
     let iconName = 'file';
     
@@ -437,15 +434,39 @@ export default class AboutBlank extends Plugin {
       iconName = 'file-text';
     }
     
-    setIcon(iconContainer, iconName);
-    
-    if (originalText) {
-      actionEl.setAttribute('aria-label', originalText);
+    const hasCardStructure = actionEl.classList.contains('about-blank-card-item')
+      && actionEl.querySelector('.about-blank-card-icon')
+      && actionEl.querySelector('.about-blank-card-label');
+    const hasIconOnlyStructure = !actionEl.classList.contains('about-blank-card-item')
+      && actionEl.querySelector('.about-blank-default-icon')
+      && !actionEl.querySelector('.about-blank-card-label');
+
+    if ((cardLayout && hasCardStructure) || (!cardLayout && hasIconOnlyStructure)) {
+      return;
     }
-    
-    // Clear text and add icon container
-    actionEl.textContent = '';
-    actionEl.appendChild(iconContainer);
+
+    actionEl.empty();
+
+    if (cardLayout) {
+      actionEl.classList.add('about-blank-card-item');
+
+      const iconContainer = actionEl.createEl('div', {
+        cls: 'about-blank-card-icon about-blank-default-icon',
+      });
+      setIcon(iconContainer, iconName);
+
+      actionEl.createEl('div', {
+        cls: 'about-blank-card-label',
+        text: originalText,
+      });
+      return;
+    }
+
+    actionEl.classList.remove('about-blank-card-item');
+    const iconContainer = actionEl.createEl('div', {
+      cls: 'about-blank-default-icon',
+    });
+    setIcon(iconContainer, iconName);
   };
 
   private alreadyAdded = (elements: HTMLElement[]): boolean => {
@@ -483,24 +504,141 @@ export default class AboutBlank extends Plugin {
     );
   };
 
+  // 卡片网格样式按钮（搜索框开启时使用）
+  private addActionButtonsAsCards = (actionListEl: HTMLElement, actions: PracticalAction[]): void => {
+    // 为 action list 添加卡片网格标记
+    actionListEl.classList.add('about-blank-card-grid');
+
+    actions.forEach((action) => {
+      const card = actionListEl.createEl(
+        "div",
+        {
+          cls: `about-blank-card-item ${CSS_CLASSES.visible} ${CSS_CLASSES.aboutBlankContainer}`,
+        },
+        (elem: Element) => {
+          elem.addEventListener("click", () => {
+            void action.callback();
+          });
+        },
+      );
+
+      const iconEl = card.createEl("div", { cls: "about-blank-card-icon" });
+      if (!isFalsyString(action.icon)) {
+        setIcon(iconEl, action.icon);
+      }
+
+      card.createEl("div", {
+        cls: "about-blank-card-label",
+        text: action.name,
+      });
+    });
+  };
+
+  // 嵌入搜索框到新标签页（Float Search 原生搜索引擎）
+  //
+  // DOM 结构：
+  //   .about-blank-embedded-search        ← 占位器（56px 流式布局）
+  //     .about-blank-search-panel         ← 绝对定位面板（56px 折叠 / 420px 展开）
+  //       workspace-split > ... > search  ← Obsidian 原生搜索视图
+  //
+  private createEmbeddedSearch = (actionListEl: HTMLElement, _emptyView: UnsafeEmptyView): void => {
+    try {
+      // 占位器（固定 56px，参与文档流）
+      const placeholderEl = document.createElement("div");
+      placeholderEl.className = "about-blank-embedded-search";
+
+      // 绝对定位面板（内含 workspace，提供真实高度）
+      const panelEl = document.createElement("div");
+      panelEl.className = "about-blank-search-panel";
+      placeholderEl.appendChild(panelEl);
+
+      // 插入到按钮列表上方（统计项下方）
+      const statsInline = actionListEl.parentElement?.querySelector('.about-blank-stats-inline');
+      if (statsInline) {
+        statsInline.insertAdjacentElement("afterend", placeholderEl);
+      } else {
+        actionListEl.insertAdjacentElement("beforebegin", placeholderEl);
+      }
+
+      // --- Float Search 引擎：WorkspaceSplit + 原生搜索视图 ---
+      const rootSplit = new (WorkspaceSplit as unknown as ConstructableWorkspaceSplit)(
+        this.app.workspace, "vertical",
+      );
+      rootSplit.getRoot = () => this.app.workspace.rootSplit!;
+      rootSplit.getContainer = () => this.app.workspace.rootSplit!;
+
+      panelEl.appendChild((rootSplit as any).containerEl);
+
+      const leaf = this.app.workspace.createLeafInParent(rootSplit, 0);
+      leaf.setPinned(true);
+
+      leaf.setViewState({
+        type: "search",
+        active: false,
+        state: { query: "", triggerBySelf: true },
+      }).then(() => {
+        (this.app.workspace as any).onLayoutChange();
+        setTimeout(() => {
+          if (leaf.view) {
+            leaf.view.setState(
+              { query: "", triggerBySelf: true },
+              { history: false } as any,
+            );
+          }
+        }, 0);
+      });
+
+      // 监听原生搜索输入框，控制展开/折叠
+      const watchNativeInput = () => {
+        const nativeInput = panelEl.querySelector('.search-input-container input') as HTMLInputElement | null;
+        if (!nativeInput) {
+          setTimeout(watchNativeInput, 100);
+          return;
+        }
+
+        // 激活搜索框即展开（点击/聚焦面板内任何元素）
+        panelEl.addEventListener("focusin", () => {
+          placeholderEl.classList.add("is-expanded");
+        });
+        panelEl.addEventListener("click", () => {
+          placeholderEl.classList.add("is-expanded");
+        });
+
+        // 点击面板外部收起
+        const onDocClick = (e: MouseEvent) => {
+          if (!placeholderEl.contains(e.target as Node)) {
+            placeholderEl.classList.remove("is-expanded");
+          }
+        };
+        document.addEventListener("click", onDocClick, true);
+
+        nativeInput.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key === "Escape") {
+            placeholderEl.classList.remove("is-expanded");
+            nativeInput.blur();
+          }
+        });
+
+        this.embeddedSearchCleanups.push(() => {
+          document.removeEventListener("click", onDocClick, true);
+          leaf.detach();
+          placeholderEl.remove();
+        });
+      };
+      setTimeout(watchNativeInput, 300);
+    } catch (error) {
+      loggerOnError(error, "嵌入搜索框失败\n(About Blank)");
+    }
+  };
+
   // ---------------------------------------------------------------------------
 
   cleanUpSettings = (): void => {
     const normalizeResults = this.normalizeSettings();
-    const allActions = allActionsBloodline(this.settings.actions);
-    const fixResults = this.checkFixAllCmd(allActions);
-    const isRegisterable = this.isRegisterable(null, allActions);
-    if (isRegisterable) {
-      this.registerAllCmdToObsidian(allActions);
-      if (this.settings.quickActions === true) {
-        this.registerQuickActions();
-      }
-    }
-    const results = [...normalizeResults, ...fixResults];
-    if (0 < results.length || !isRegisterable) {
-      const registerableResult = isRegisterable ? "OK" : "Failed";
+    const results = [...normalizeResults];
+    if (0 < results.length) {
       const resultsMessage =
-        `"类型/属性检查": ${normalizeResults.length} 已修复\n"命令 ID 检查": ${fixResults.length} 已修复\n"注册所有命令": ${registerableResult}`;
+        `"类型/属性检查": ${normalizeResults.length} 已修复`;
       const descMessage =
         "查看控制台获取更多详情。设置尚未保存，重新加载 Obsidian 以放弃更改。";
       new Notice(`${resultsMessage}\n\n${descMessage}\n\n**点击关闭**`, 0);
@@ -512,6 +650,9 @@ export default class AboutBlank extends Plugin {
 
   normalizeSettings = (): unknown[] => {
     const results: unknown[] = [];
+    const setProp = <T extends object, K extends keyof T>(obj: T, key: K, value: T[K]): void => {
+      obj[key] = value;
+    };
 
     const normalizeActions = (actions: Action[]): Action[] => {
       return actions.map((action) => {
@@ -534,7 +675,6 @@ export default class AboutBlank extends Plugin {
               new Map<string, unknown>([
                 ["errorType", "action's property type error"],
                 ["actionName", action.name],
-                ["actionCommandId", action.cmdId],
                 ["actionContentKind", action.content.kind],
                 ["actionContent", action.content],
                 ["fixedKey", key],
@@ -542,7 +682,7 @@ export default class AboutBlank extends Plugin {
                 ["after", newAction[key]],
               ]),
             );
-            updateProp(action, key, newAction[key]);
+            setProp(action, key, newAction[key]);
           }
         });
         if (action.content.kind === ACTION_KINDS.group) {
@@ -564,94 +704,13 @@ export default class AboutBlank extends Plugin {
             ["after", defaultSettings[key]],
           ]),
         );
-        updateProp(this.settings, key, defaultSettings[key]);
+        setProp(this.settings, key, defaultSettings[key]);
       }
     });
 
     this.settings.actions = normalizeActions(this.settings.actions);
 
     return results;
-  };
-
-  // Expect: `this.normalizeSettings()` was done.
-  checkFixAllCmd = (allActions?: Action[]): unknown[] => {
-    if (!Array.isArray(allActions)) {
-      allActions = allActionsBloodline(this.settings.actions);
-    }
-
-    const fixResults: unknown[] = [];
-    for (const action of allActions) {
-      if (isFalsyString(action.cmdId)) {
-        const beforeId = action.cmdId;
-        action.cmdId = genNewCmdId(this.settings); // Unique ID
-        fixResults.push(
-          new Map<string, unknown>([
-            ["errorType", "action's command ID is falsy string"],
-            ["actionName", action.name],
-            ["actionContentKind", action.content.kind],
-            ["actionContent", action.content],
-            ["beforeId", beforeId],
-            ["fixedId", action.cmdId],
-          ]),
-        );
-      }
-    }
-
-    if (hasDuplicates(allActions.map((action) => action.cmdId))) {
-      const resolveResults: unknown[] = this.resolveCmdIdsConflict(allActions);
-      return [...fixResults, ...resolveResults];
-    }
-
-    return fixResults;
-  };
-
-  // Before executing this, check for duplicates with `hasDuplicates.ts`
-  // Expect: `this.normalizeSettings()` was done.
-  resolveCmdIdsConflict = (allActions?: Action[]): unknown[] => {
-    if (!Array.isArray(allActions)) {
-      allActions = allActionsBloodline(this.settings.actions);
-    }
-
-    const results: unknown[] = [];
-    const cmdIds = allActions.map((action) => action.cmdId);
-    cmdIds.forEach((cmdId, index) => {
-      const duplicate = cmdIds.indexOf(cmdId, index + 1);
-      if (duplicate !== -1) {
-        // In the current algorithm, if there are multiple duplicates,
-        // it is better to update the `index` ID rather than `duplicate`.
-        const action = allActions[index];
-        const beforeId = action.cmdId;
-        action.cmdId = genNewCmdId(this.settings); // Unique ID
-        results.push(
-          new Map<string, unknown>([
-            ["errorType", "action's command ID is duplicated"],
-            ["actionName", action.name],
-            ["actionContentKind", action.content.kind],
-            ["actionContent", action.content],
-            ["beforeId", beforeId],
-            ["fixedId", action.cmdId],
-          ]),
-        );
-      }
-    });
-
-    return results;
-  };
-
-  isRegisterable = (
-    registerId: string | null = null,
-    allActions?: Action[],
-  ): boolean => {
-    if (!Array.isArray(allActions)) {
-      allActions = allActionsBloodline(this.settings.actions);
-    }
-
-    const cmdIds = allActions.map((action) => action.cmdId);
-    if (typeof registerId === "string") {
-      return !isFalsyString(registerId) && !hasDuplicates(cmdIds, registerId);
-    } else {
-      return cmdIds.every((cmdId) => !isFalsyString(cmdId)) && !hasDuplicates(cmdIds);
-    }
   };
 
   applyHeatmapSettings = (): void => {
@@ -767,11 +826,6 @@ export default class AboutBlank extends Plugin {
               if (this.settings.heatmapEnabled && 
                   this.globalRenderHeatmap && this.heatmapDataCache) {
                 this.globalRenderHeatmap();
-              }
-              
-              // 渲染统计气泡 - 直接调用，不经过防抖
-              if (this.settings.showStats && this.globalRenderStatsImmediate) {
-                this.globalRenderStatsImmediate();
               }
               
               // 重置处理状态
@@ -1271,14 +1325,29 @@ export default class AboutBlank extends Plugin {
     emptyLeaves.forEach(leaf => {
       const container = leaf.querySelector('.empty-state-container') as HTMLElement;
       if (!container) return;
+      container.classList.add('about-blank-stats-bubble-mode');
+      container.classList.remove('about-blank-stats-inline-mode');
       const actionList = container.querySelector('.empty-state-action-list');
       if (!actionList) return;
       if (container.querySelector('.about-blank-stats-bubbles')) return;
       if (container.clientHeight < 100) return;
 
-      const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
       const containerHeight = container.clientHeight;
-      const logoCenterY = containerHeight * 0.33;
+      const logoEl = Array.from(container.children).find((child) => {
+        return child instanceof HTMLElement && child.classList.contains('about-blank-logo');
+      }) as HTMLElement | undefined;
+
+      if (!logoEl || logoEl.offsetHeight <= 0) {
+        return;
+      }
+
+      const logoRect = logoEl.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const logoCenterY = Math.max(
+        80,
+        Math.min(containerHeight - 80, (logoRect.top - containerRect.top) + (logoRect.height / 2)),
+      );
+      const statsContainer = container.createEl('div', { cls: 'about-blank-stats-bubbles' });
       const maxRowsPerSide = 6;
       const verticalSpacing = 50;
       const totalBubbles = orderedStats.length;
@@ -1387,6 +1456,8 @@ export default class AboutBlank extends Plugin {
     emptyLeaves.forEach(leaf => {
       const container = leaf.querySelector('.empty-state-container') as HTMLElement;
       if (!container) return;
+      container.classList.add('about-blank-stats-inline-mode');
+      container.classList.remove('about-blank-stats-bubble-mode');
       const actionList = container.querySelector('.empty-state-action-list');
       if (!actionList) return;
       // 避免重复渲染
@@ -1447,10 +1518,48 @@ export default class AboutBlank extends Plugin {
               currentOrder[targetIdx] = temp;
               this.settings.statOrder = currentOrder;
               this.saveSettingsSilent();
-              // 重新渲染内联统计
-              document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
-              this.statsCache = null;
-              this.createStatsBubbles();
+              // FLIP 动画交换位置
+              const allItems = Array.from(inlineContainer.querySelectorAll('.about-blank-stats-inline-item')) as HTMLElement[];
+              const draggedEl = allItems.find(el => el.getAttribute('data-stat-id') === draggedStatId);
+              const targetEl = allItems.find(el => el.getAttribute('data-stat-id') === targetStatId);
+              if (draggedEl && targetEl) {
+                // First: 记录当前位置
+                const dRect = draggedEl.getBoundingClientRect();
+                const tRect = targetEl.getBoundingClientRect();
+                // Swap DOM 位置
+                const dNext = draggedEl.nextSibling;
+                const tNext = targetEl.nextSibling;
+                if (dNext === targetEl) {
+                  inlineContainer.insertBefore(targetEl, draggedEl);
+                } else if (tNext === draggedEl) {
+                  inlineContainer.insertBefore(draggedEl, targetEl);
+                } else {
+                  inlineContainer.insertBefore(draggedEl, tNext);
+                  inlineContainer.insertBefore(targetEl, dNext);
+                }
+                // Last: 记录新位置
+                const dRectNew = draggedEl.getBoundingClientRect();
+                const tRectNew = targetEl.getBoundingClientRect();
+                // Invert + Play
+                const dDx = dRect.left - dRectNew.left;
+                const dDy = dRect.top - dRectNew.top;
+                const tDx = tRect.left - tRectNew.left;
+                const tDy = tRect.top - tRectNew.top;
+                draggedEl.style.transition = 'none';
+                draggedEl.style.transform = `translate(${dDx}px, ${dDy}px)`;
+                targetEl.style.transition = 'none';
+                targetEl.style.transform = `translate(${tDx}px, ${tDy}px)`;
+                requestAnimationFrame(() => {
+                  draggedEl.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                  draggedEl.style.transform = '';
+                  targetEl.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                  targetEl.style.transform = '';
+                  setTimeout(() => {
+                    draggedEl.style.transition = '';
+                    targetEl.style.transition = '';
+                  }, 300);
+                });
+              }
             }
           }
         });
@@ -1460,6 +1569,12 @@ export default class AboutBlank extends Plugin {
 
       // 插入到 action list 上方
       actionList.parentNode?.insertBefore(inlineContainer, actionList);
+
+      // 确保搜索框始终在统计栏下方（异步重渲染可能打乱顺序）
+      const searchEl = container.querySelector('.about-blank-embedded-search');
+      if (searchEl && searchEl.previousElementSibling !== inlineContainer) {
+        inlineContainer.insertAdjacentElement('afterend', searchEl);
+      }
     });
   };
 
@@ -1698,13 +1813,41 @@ export default class AboutBlank extends Plugin {
 
   // 为特定容器应用 Logo 样式类（用于新打开的标签页）
   private applyLogoClassToContainer = (actionListEl: HTMLElement): void => {
-    if (!this.settings.logoEnabled) return;
-    if (!this.logoImageReady) return; // 图片未就绪时不添加类，避免显示空白色块
     const container = actionListEl.closest('.empty-state-container');
     if (!container) return;
     container.classList.remove('logo-top', 'logo-mask', 'logo-original');
+    const logoEl = Array.from(container.children).find((child) => {
+      return child instanceof HTMLElement && child.classList.contains('about-blank-logo');
+    }) as HTMLElement | undefined;
+
+    if (!this.settings.logoEnabled || !this.logoImageReady) {
+      logoEl?.remove();
+      return;
+    }
+
     container.classList.add('logo-top');
     container.classList.add(`logo-${this.settings.logoStyle || 'mask'}`);
+
+    const nextLogoEl = logoEl ?? document.createElement('div');
+    nextLogoEl.className = 'about-blank-logo';
+    this.syncLogoElementStyle(nextLogoEl);
+    if (container.firstElementChild !== nextLogoEl) {
+      container.insertBefore(nextLogoEl, container.firstChild);
+    }
+  };
+
+  private syncLogoElementStyle = (logoEl: HTMLElement): void => {
+    logoEl.style.opacity = `${this.settings.logoOpacity}`;
+    logoEl.style.setProperty('opacity', `${this.settings.logoOpacity}`, 'important');
+
+    if (this.settings.logoStyle === 'mask') {
+      logoEl.style.backgroundColor = 'var(--icon-color)';
+      logoEl.style.backgroundImage = 'none';
+      return;
+    }
+
+    logoEl.style.backgroundColor = 'transparent';
+    logoEl.style.backgroundImage = 'var(--about-blank-logo-image)';
   };
 
   applyLogoSettings = (): void => {
@@ -1762,11 +1905,25 @@ export default class AboutBlank extends Plugin {
         const emptyContainers = document.querySelectorAll('.workspace-leaf-content[data-type="empty"] .empty-state-container');
         emptyContainers.forEach(container => {
           container.classList.remove('logo-top', 'logo-mask', 'logo-original');
+          container.querySelectorAll('.about-blank-logo').forEach((el) => el.remove());
           if (this.settings.logoEnabled) {
             container.classList.add('logo-top');
             container.classList.add(`logo-${this.settings.logoStyle || 'mask'}`);
+            const logoEl = document.createElement('div');
+            logoEl.className = 'about-blank-logo';
+            this.syncLogoElementStyle(logoEl);
+            container.insertBefore(logoEl, container.firstChild);
           }
         });
+
+        if (this.settings.showStats) {
+          document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
+          document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
+          this.statsCache = null;
+          requestAnimationFrame(() => {
+            this.globalRenderStatsImmediate?.();
+          });
+        }
       };
       
       if (this.settings.logoEnabled && rawImageUrl) {
@@ -1803,7 +1960,7 @@ export default class AboutBlank extends Plugin {
       
       // 应用按钮栏装饰图片设置
       const root2 = document.documentElement;
-      root2.style.setProperty('--about-blank-action-list-image-display', this.settings.showActionListImage ? 'block' : 'none');
+      root2.style.setProperty('--about-blank-action-list-image-display', this.settings.showActionListImage && !this.settings.searchBoxEnabled ? 'block' : 'none');
       
       // Force a reflow to ensure styles are applied
       setTimeout(() => {

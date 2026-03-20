@@ -1,0 +1,80 @@
+.about-blank-search-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  overflow: hidden;
+  border-radius: var(--input-radius);
+  background-color: var(--background-primary);
+  border: var(--input-border-width) solid var(--background-modifier-border);
+  transition: height 0.25s ease, box-shadow 0.2s ease;
+}
+
+.about-blank-embedded-search.is-expanded .about-blank-search-panel {
+  height: 420px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+
+.empty-state-container .about-blank-embedded-search {
+  width: min(50vw, 100%);
+  min-width: 250px;
+  max-width: 700px;
+  margin: 16px auto 6px;
+  position: relative;
+  z-index: 100;
+  height: 52px;
+  flex: 0 0 52px;
+}
+
+
+.about-blank-search-panel .workspace-split,
+.about-blank-search-panel .workspace-tabs,
+.about-blank-search-panel .workspace-tab-container,
+.about-blank-search-panel .workspace-leaf {
+  height: 100% !important;
+  width: 100% !important;
+  position: relative !important;
+  inset: unset !important;
+}
+
+.about-blank-search-panel .workspace-leaf-content {
+  height: 100% !important;
+  width: 100% !important;
+  position: relative !important;
+  inset: unset !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+
+.about-blank-search-panel .workspace-leaf-resize-handle,
+.about-blank-search-panel .view-header,
+.about-blank-search-panel .workspace-tab-header-container,
+.about-blank-search-panel .nav-buttons-container {
+  display: none !important;
+}
+
+
+.about-blank-search-panel .view-content {
+  height: 100% !important;
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+}
+
+
+.about-blank-search-panel .search-input-container {
+  flex-shrink: 0;
+  border: none !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+
+.about-blank-search-panel .search-results-container {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}

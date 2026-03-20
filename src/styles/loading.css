@@ -1,0 +1,54 @@
+.empty-state-container.about-blank-loading > *:not(.about-blank-loader) {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+
+.about-blank-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+
+.about-blank-loader-bar {
+  width: 160px;
+  height: 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+  overflow: hidden;
+}
+
+
+.about-blank-loader-bar-fill {
+  width: 40%;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--interactive-accent);
+  animation: about-blank-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes about-blank-progress {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(250%); }
+  100% { transform: translateX(-100%); }
+}
+
+
+.empty-state-container.about-blank-ready > *:not(.about-blank-loader) {
+  animation: about-blank-reveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes about-blank-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -1,0 +1,87 @@
+.empty-state-container{
+  max-width: none !important;
+}
+
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-mask::before,
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-original::before {
+  content: none;
+  display: none;
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container .about-blank-logo {
+  display: inline-block;
+  width: var(--about-blank-logo-size, 120px);
+  height: var(--about-blank-logo-size, 120px);
+  pointer-events: none;
+  z-index: 1;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: none;
+  max-height: none;
+  opacity: var(--about-blank-logo-opacity);
+  flex: 0 0 auto;
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-mask .about-blank-logo {
+  background-color: var(--icon-color);
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-image: var(--about-blank-logo-image);
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-image: var(--about-blank-logo-image);
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-original .about-blank-logo {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-image: var(--about-blank-logo-image);
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top .about-blank-logo {
+  margin-bottom: 8px;
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container {
+  position: relative;
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 0px;
+  width: 100%;
+}
+
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
+  min-height: 100vh;
+  max-height: none;
+  height: auto;
+}
+
+
+.workspace-leaf-content[data-type="empty"] {
+  min-height: 100vh;
+  max-height: none;
+  height: 100vh;
+  overflow: visible;
+}
+
+.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
+  flex-direction: column;
+}

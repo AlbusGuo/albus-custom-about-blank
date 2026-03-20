@@ -24,12 +24,7 @@ import {
 } from "src/settings/action-basic";
 
 import {
-  editStyles,
-} from "src/settings/editStyles";
-
-import {
   HIDE_DEFAULT_ACTIONS,
-  makeSettingsHideDefaults,
 } from "src/settings/hideDefault";
 
 import {
@@ -53,7 +48,6 @@ import isBool from "src/utils/isBool";
 import {
   adjustInt,
   loggerOnError,
-  setFakeIconToExButtonIfEmpty,
 } from "src/commons";
 
 import type AboutBlank from "src/main";
@@ -67,7 +61,6 @@ import {
 export interface AboutBlankSettings {
   addActionsToNewTabs: boolean;
   iconTextGap: number;
-  hideMessage: boolean;
   hideDefaultActions: ValuesOf<typeof HIDE_DEFAULT_ACTIONS>;
   centerActionListVertically: boolean;
   deleteActionListMarginTop: boolean;
@@ -81,6 +74,7 @@ export interface AboutBlankSettings {
   logoSize: number;
   logoOpacity: number;
   
+  searchBoxEnabled: boolean;
   showStats: boolean;
   showUsageDays: boolean;
   showFileCount: boolean;
@@ -103,7 +97,6 @@ export interface AboutBlankSettings {
 export const DEFAULT_SETTINGS: AboutBlankSettings = {
   addActionsToNewTabs: true,
   iconTextGap: 10,
-  hideMessage: false,
   hideDefaultActions: HIDE_DEFAULT_ACTIONS.not,
   centerActionListVertically: false,
   deleteActionListMarginTop: false,
@@ -117,6 +110,7 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoSize: 350,
   logoOpacity: 0.4,
   
+  searchBoxEnabled: false,
   showStats: false,
   showUsageDays: true,
   showFileCount: true,
@@ -166,7 +160,6 @@ export const settingsPropTypeCheck: {
     }
     return limit.min <= num && num <= limit.max;
   },
-  hideMessage: (value: unknown) => isBool(value),
   hideDefaultActions: (value: unknown) => {
     const correctValues: unknown[] = Object.values(HIDE_DEFAULT_ACTIONS);
     return correctValues.includes(value);
@@ -206,6 +199,7 @@ export const settingsPropTypeCheck: {
   statOrder: (value: unknown) => {
     return Array.isArray(value) && value.every(item => typeof item === "string");
   },
+  searchBoxEnabled: (value: unknown) => isBool(value),
   showStats: (value: unknown) => isBool(value),
   showUsageDays: (value: unknown) => isBool(value),
   showFileCount: (value: unknown) => isBool(value),
@@ -226,11 +220,7 @@ export const defaultSettingsClone = (): AboutBlankSettings => {
 export class AboutBlankSettingTab extends PluginSettingTab {
   plugin: AboutBlank;
   icon: string = 'app-window';
-  showAppearanceSettings: boolean = false;
   newActionName: string = "";
-  showCleanUpSettings: boolean = false;
-  showHeatmapSettings: boolean = false;
-  private itemListIdCounter: number = 0;
   private draggedIndex: number | null = null;
 
   constructor(app: App, plugin: AboutBlank) {
@@ -299,25 +289,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private makeSettingsShortcuts = (containerEl: HTMLElement): void => {
     const basicGroup = new SettingGroup(containerEl);
 
-    // 隐藏消息
-    basicGroup.addSetting((hideMsgSetting) => {
-      hideMsgSetting
-        .setName("隐藏消息")
-        .setDesc("隐藏新标签页中的消息")
-        .addToggle((toggle) => {
-          toggle
-            .setValue(this.plugin.settings.hideMessage)
-            .onChange(async (value) => {
-              try {
-                this.plugin.settings.hideMessage = value;
-                await this.plugin.saveSettings();
-              } catch (error) {
-                loggerOnError(error, "Error in settings.\n(About Blank)");
-              }
-            });
-        });
-    });
-
     // 隐藏默认按钮
     basicGroup.addSetting((hideDefaultSetting) => {
       hideDefaultSetting
@@ -340,116 +311,47 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         });
     });
 
-    // 向新标签页添加按钮
-    basicGroup.addSetting((addActionsSetting) => {
-      addActionsSetting
-        .setName("向新标签页添加按钮")
-        .setDesc(
-          "如果启用，\"按钮\"将被添加到新标签页中, 更改此设置后, 需要重新加载 Obsidian",
-        )
+    // 搜索框开关
+    basicGroup.addSetting((searchBoxSetting) => {
+      searchBoxSetting
+        .setName("搜索框")
+        .setDesc("在新标签页中嵌入 Obsidian 内置搜索框，开启后按钮列表将以卡片网格样式展示")
         .addToggle((toggle) => {
           toggle
-            .setValue(this.plugin.settings.addActionsToNewTabs)
+            .setValue(this.plugin.settings.searchBoxEnabled)
             .onChange(async (value) => {
               try {
-                this.plugin.settings.addActionsToNewTabs = value;
-                if (value) {
-                  editStyles.rewriteCssVars.emptyStateDisplay.hide();
-                } else {
-                  editStyles.rewriteCssVars.emptyStateDisplay.default();
-                }
+                this.plugin.settings.searchBoxEnabled = value;
                 await this.plugin.saveSettings();
-                new Notice("重新加载 Obsidian 以应用更改", 0);
-              } catch (error) {
-                loggerOnError(error, "Error in settings.\n(About Blank)");
-              }
-            });
-        });
-    });
-
-    // 注册按钮
-    basicGroup.addSetting((quickActionsSetting) => {
-      quickActionsSetting
-        .setName("注册按钮")
-        .setDesc(
-          "将要添加到新标签页的按钮编译为建议器, 并在 Obsidian 中注册为命令",
-        );
-
-      if (this.plugin.settings.quickActions === true) {
-        quickActionsSetting.addExtraButton((button) => {
-          button
-            .setIcon(this.plugin.settings.quickActionsIcon)
-            .setTooltip("设置图标")
-            .onClick(async () => {
-              try {
-                const noIconId = "*无图标*";
-                const iconIds = getIconIds();
-                iconIds.unshift(noIconId);
-                const placeholder = this.plugin.settings.quickActionsIcon
-                  ? this.plugin.settings.quickActionsIcon
-                  : "图标...";
-                const response = await new IconSuggesterAsync(
-                  this.app,
-                  iconIds,
-                  placeholder,
-                ).openAndRespond();
-                if (response.aborted) {
-                  return;
-                } else if (response.result === noIconId) {
-                  this.plugin.settings.quickActionsIcon = "";
-                } else {
-                  this.plugin.settings.quickActionsIcon = response.result;
-                }
-                if (this.plugin.settings.quickActions === true) {
-                  this.plugin.registerQuickActions();
-                }
+                this.plugin.refreshAllNewTabs();
                 this.renderCurrentTab();
               } catch (error) {
                 loggerOnError(error, "Error in settings.\n(About Blank)");
               }
             });
-          setFakeIconToExButtonIfEmpty(button.extraSettingsEl);
         });
-      }
+    });
 
-      quickActionsSetting.addToggle((toggle) => {
-        toggle
-          .setValue(this.plugin.settings.quickActions)
-          .onChange(async (value) => {
-            try {
-              this.plugin.settings.quickActions = value;
-              await this.plugin.saveSettings();
-              if (this.plugin.settings.quickActions === true) {
-                this.plugin.registerQuickActions();
-              } else {
-                this.plugin.unregisterQuickActions();
-              }
-              this.display();
-            } catch (error) {
-              loggerOnError(error, "Error in settings.\n(About Blank)");
-            }
+    if (!this.plugin.settings.searchBoxEnabled) {
+      basicGroup.addSetting((pseudoImageSetting) => {
+        pseudoImageSetting
+          .setName("快捷方式列表装饰图片")
+          .setDesc("控制快捷方式列表右侧的装饰图片是否显示，仅在关闭搜索框时生效")
+          .addToggle((toggle) => {
+            toggle
+              .setValue(this.plugin.settings.showActionListImage)
+              .onChange(async (value) => {
+                try {
+                  this.plugin.settings.showActionListImage = value;
+                  await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                } catch (error) {
+                  loggerOnError(error, "Error in settings.\n(About Blank)");
+                }
+              });
           });
       });
-    });
-
-    // 按钮栏图片开关
-    basicGroup.addSetting((pseudoImageSetting) => {
-      pseudoImageSetting
-        .setName("按钮栏装饰图片")
-        .setDesc("控制按钮栏右侧的装饰图片是否显示")
-        .addToggle((toggle) => {
-          toggle
-            .setValue(this.plugin.settings.showActionListImage)
-            .onChange(async (value) => {
-              try {
-                this.plugin.settings.showActionListImage = value;
-                await this.plugin.saveSettings();
-              } catch (error) {
-                loggerOnError(error, "Error in settings.\n(About Blank)");
-              }
-            });
-        });
-    });
+    }
 
     // 快捷方式标题
     new Setting(containerEl)
@@ -482,9 +384,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
             if (newAction) {
               this.plugin.settings.actions.push(newAction);
               await this.plugin.saveSettings();
-              if (this.plugin.settings.quickActions) {
-                this.plugin.registerQuickActions();
-              }
               this.renderCurrentTab();
             }
           });
@@ -506,6 +405,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               try {
                 this.plugin.settings.logoEnabled = value;
                 await this.plugin.saveSettings();
+                this.plugin.refreshAllNewTabs();
                 this.renderCurrentTab();
               } catch (error) {
                 loggerOnError(error, "设置中出现错误\n(About Blank)");
@@ -537,6 +437,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               logoDirectoryInput.inputEl.addEventListener('blur', async () => {
                 try {
                   await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
                 } catch (error) {
                   loggerOnError(error, "设置中出现错误\n(About Blank)");
                 }
@@ -565,6 +467,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               logoTextInput.inputEl.addEventListener('blur', async () => {
                 try {
                   await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
                 } catch (error) {
                   loggerOnError(error, "设置中出现错误\n(About Blank)");
                 }
@@ -581,6 +485,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                       logoTextInput.setValue(selectedPath);
                       this.plugin.settings.logoPath = selectedPath;
                       await this.plugin.saveSettings();
+                      this.plugin.refreshAllNewTabs();
+                      this.renderCurrentTab();
                       new Notice(`已选择图片: ${selectedPath}`, 3000);
                     }
                   } catch (error) {
@@ -604,6 +510,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   try {
                     this.plugin.settings.logoStyle = value;
                     await this.plugin.saveSettings();
+                    this.plugin.refreshAllNewTabs();
+                    this.renderCurrentTab();
                   } catch (error) {
                     loggerOnError(error, "设置中出现错误\n(About Blank)");
                   }
@@ -642,6 +550,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   }
                   this.plugin.settings.logoOpacity = num;
                   await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
                 } catch (error) {
                   loggerOnError(error, "设置中出现错误\n(About Blank)");
                 }
@@ -694,6 +604,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 try {
                   this.plugin.settings.showUsageDays = value;
                   await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
                 } catch (error) {
                   loggerOnError(error, "设置中出现错误\n(About Blank)");
                 }
@@ -883,9 +795,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       .onChange(async (value) => {
         action.name = value;
         await this.plugin.saveSettings();
-        if (this.plugin.settings.quickActions) {
-          this.plugin.registerQuickActions();
-        }
       }));
 
     // 图标选择器
@@ -977,18 +886,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       });
     });
 
-    // 注册为命令开关
-    setting.addToggle(toggle => toggle
-      .setTooltip('注册为命令')
-      .setValue(action.cmd)
-      .onChange(async (value) => {
-        action.cmd = value;
-        await this.plugin.saveSettings();
-        if (this.plugin.settings.quickActions) {
-          this.plugin.registerQuickActions();
-        }
-      }));
-
     // 删除按钮
     setting.addExtraButton(button => button
       .setIcon('trash')
@@ -996,9 +893,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       .onClick(async () => {
         this.plugin.settings.actions.splice(index, 1);
         await this.plugin.saveSettings();
-        if (this.plugin.settings.quickActions) {
-          this.plugin.registerQuickActions();
-        }
         this.renderCurrentTab();
       }));
 
@@ -1042,9 +936,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         action.icon = response.result === '*无图标*' ? '' : response.result;
         updateIconDisplay(action.icon);
         await this.plugin.saveSettings();
-        if (this.plugin.settings.quickActions) {
-          this.plugin.registerQuickActions();
-        }
       }
     });
 
@@ -1136,9 +1027,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     const [movedAction] = actions.splice(fromIndex, 1);
     actions.splice(toIndex, 0, movedAction);
     await this.plugin.saveSettings();
-    if (this.plugin.settings.quickActions) {
-      this.plugin.registerQuickActions();
-    }
     // 刷新所有打开的新标签页，使其显示最新的按钮顺序
     this.plugin.refreshAllNewTabs();
     this.renderCurrentTab();

@@ -217,9 +217,6 @@ export const makeSettingsActionsHeader = (
             actionsHolder.actions.push(newAction);
             if (save) {
               await page.plugin.saveSettings();
-              if (page.plugin.settings.quickActions === true) {
-                page.plugin.registerQuickActions(); // Overwrite
-              }
             }
             // page.newActionName = "";
             if (page instanceof ActionSettingsModal) {
@@ -292,9 +289,6 @@ export const makeSettingsActionsList = (
               );
               if (save) {
                 await page.plugin.saveSettings();
-                if (page.plugin.settings.quickActions === true) {
-                  page.plugin.registerQuickActions(); // Overwrite
-                }
               }
               page.display();
             } catch (error) {
@@ -316,9 +310,6 @@ export const makeSettingsActionsList = (
               );
               if (save) {
                 await page.plugin.saveSettings();
-                if (page.plugin.settings.quickActions === true) {
-                  page.plugin.registerQuickActions(); // Overwrite
-                }
               }
               page.display();
             } catch (error) {
