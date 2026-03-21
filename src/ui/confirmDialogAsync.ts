@@ -2,28 +2,12 @@ import {
   type App,
   type ButtonComponent,
   Modal,
-  Notice,
   Setting,
 } from "obsidian";
 
-// =============================================================================
-
-/* Example:
-try {
-  const response = await new ConfirmDialogAsync(
-    this.app,
-    "执行命令",
-    "您确定要执行此命令吗？",
-  ).setOkCancel().openAndRespond();
-  if (!response.result) {
-    return;
-  }
-} catch (error) {
-  console.error(error);
-}
-*/
-
-// =============================================================================
+import {
+  loggerOnError,
+} from "src/commons";
 
 interface DialogResponse {
   result: boolean;
@@ -48,19 +32,6 @@ export class ConfirmDialogAsync extends Modal {
     result: false,
     aborted: true,
   } as const;
-
-  private errorHandler = (
-    error: any,
-    noticeMessage: string = "",
-  ) => {
-    if (typeof noticeMessage === "string" && 0 < noticeMessage.length) {
-      new Notice(noticeMessage);
-    }
-    const errorObj: Error = error instanceof Error
-      ? error
-      : new Error(String(error));
-    console.error(errorObj);
-  };
 
   constructor(
     app: App,
@@ -125,7 +96,7 @@ export class ConfirmDialogAsync extends Modal {
             });
             this.close();
           } catch (error) {
-            this.errorHandler(error, "Error in button callback");
+            loggerOnError(error, "Error in button callback");
           }
         });
       if (buttonSettings.cta) {
@@ -152,7 +123,7 @@ export class ConfirmDialogAsync extends Modal {
       // If the operation is aborted or otherwise unresolved, resolve it with `abortedResponse`.
       this.resolve(this.abortedResponse);
     } catch (error) {
-      this.errorHandler(error, "Error when closing dialog.");
+      loggerOnError(error, "Error when closing dialog.");
     }
   }
 

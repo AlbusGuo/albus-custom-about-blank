@@ -1,31 +1,12 @@
 import {
   type App,
-  Notice,
   setIcon,
   SuggestModal,
 } from "obsidian";
 
-// =============================================================================
-
-/* Example:
 import {
-  getIconIds,
-  setIcon,
-} from "obsidian";
-
-try {
-  const iconIds = getIconIds();
-  const response = await new IconSuggesterAsync(this.app, iconIds, "图标...").openAndRespond();
-  if (response.aborted) {
-    return;
-  }
-  setIcon(element, response.result);
-} catch (error) {
-  console.error(error);
-}
-*/
-
-// =============================================================================
+  loggerOnError,
+} from "src/commons";
 
 type ValueType = string;
 
@@ -53,19 +34,6 @@ export class IconSuggesterAsync extends SuggestModal<ValueType> {
     result: null,
     aborted: true,
   } as const;
-
-  private errorHandler = (
-    error: any,
-    noticeMessage: string = "",
-  ) => {
-    if (typeof noticeMessage === "string" && 0 < noticeMessage.length) {
-      new Notice(noticeMessage);
-    }
-    const errorObj: Error = error instanceof Error
-      ? error
-      : new Error(String(error));
-    console.error(errorObj);
-  };
 
   constructor(
     app: App,
@@ -103,7 +71,7 @@ export class IconSuggesterAsync extends SuggestModal<ValueType> {
       // If the operation is aborted or otherwise unresolved, resolve it with `abortedResponse`.
       this.resolve(this.abortedResponse);
     } catch (error) {
-      this.errorHandler(error, "Error when closing suggester.");
+      loggerOnError(error, "Error when closing suggester.");
     }
   }
 
@@ -117,7 +85,7 @@ export class IconSuggesterAsync extends SuggestModal<ValueType> {
         });
       });
     } catch (error) {
-      this.errorHandler(error, "Failed to get suggestions.");
+      loggerOnError(error, "Failed to get suggestions.");
       return [];
     }
   }
@@ -128,7 +96,7 @@ export class IconSuggesterAsync extends SuggestModal<ValueType> {
       elem.createEl("div", { text: icon });
       setIcon(elem.createEl("div"), icon);
     } catch (error) {
-      this.errorHandler(error, "Failed to render suggestion.");
+      loggerOnError(error, "Failed to render suggestion.");
     }
   }
 
@@ -146,7 +114,7 @@ export class IconSuggesterAsync extends SuggestModal<ValueType> {
       });
       this.close();
     } catch (error) {
-      this.errorHandler(error, "Failed to select suggestion.");
+      loggerOnError(error, "Failed to select suggestion.");
     }
   }
 }

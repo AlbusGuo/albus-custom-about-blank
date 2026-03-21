@@ -16,10 +16,6 @@ import {
 } from "src/settings/action-basic";
 
 import {
-  makeSettingsActionsList,
-} from "src/settings/action-settings";
-
-import {
   createNewAction,
 } from "src/settings/action-basic";
 
@@ -43,10 +39,30 @@ import {
   ExtensionSuggester,
 } from "src/ui/extensionSuggester";
 
+import {
+  CustomStatEditorPopover,
+} from "src/settings/customStatEditorPopover";
+
+import {
+  countCustomStatFilterConditions,
+  CUSTOM_STAT_FILTER_CONDITION_TYPES,
+  CUSTOM_STAT_FILTER_CONJUNCTIONS,
+  CUSTOM_STAT_FILTER_NODE_KINDS,
+  CUSTOM_STAT_FILTER_OPERATORS,
+  createCustomStatDefinition,
+  isCustomStatDefinition,
+  isOperatorValueOptional,
+  type CustomStatDefinition,
+  type CustomStatFilterCondition,
+  type CustomStatFilterConditionType,
+  type CustomStatFilterGroup,
+  type CustomStatFilterNode,
+  type CustomStatFilterOperator,
+} from "src/utils/customStatFilters";
+
 import isBool from "src/utils/isBool";
 
 import {
-  adjustInt,
   loggerOnError,
 } from "src/commons";
 
@@ -56,17 +72,18 @@ import {
   type ValuesOf,
 } from "src/types";
 
+import {
+  type UnsafeApp,
+} from "src/unsafe";
+
 // =============================================================================
 
 export interface AboutBlankSettings {
-  addActionsToNewTabs: boolean;
   iconTextGap: number;
   hideDefaultActions: ValuesOf<typeof HIDE_DEFAULT_ACTIONS>;
   centerActionListVertically: boolean;
   deleteActionListMarginTop: boolean;
-  quickActions: boolean;
-  quickActionsIcon: string;
-  showActionListImage: boolean;
+  shortcutListEnabled: boolean;
   logoEnabled: boolean;
   logoPath: string;
   logoDirectory: string;
@@ -84,25 +101,18 @@ export interface AboutBlankSettings {
   heatmapDataSource: string;
   heatmapFrontmatterField: string;
   heatmapColorSegments: Array<{min: number, max: number, color: string}>;
-  customStats: Array<{
-    type: "folder" | "fileType";
-    value: string;
-    displayName: string;
-  }>;
+  customStats: CustomStatDefinition[];
   statOrder: string[];
   actions: Action[];
   settingsTab: string;
 }
 
 export const DEFAULT_SETTINGS: AboutBlankSettings = {
-  addActionsToNewTabs: true,
   iconTextGap: 10,
-  hideDefaultActions: HIDE_DEFAULT_ACTIONS.all,
+  hideDefaultActions: HIDE_DEFAULT_ACTIONS.not,
   centerActionListVertically: false,
   deleteActionListMarginTop: false,
-  quickActions: false,
-  quickActionsIcon: "",
-  showActionListImage: true,
+  shortcutListEnabled: false,
   logoEnabled: false,
   logoPath: "",
   logoDirectory: "",
@@ -145,10 +155,31 @@ export const DEFAULT_SETTINGS_LIMIT: Partial<
 
 // =============================================================================
 
+type HeatmapColorSegment = AboutBlankSettings["heatmapColorSegments"][number];
+type CustomStat = AboutBlankSettings["customStats"][number];
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+const isHeatmapColorSegment = (value: unknown): value is HeatmapColorSegment => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.min === "number"
+    && typeof value.max === "number"
+    && typeof value.color === "string";
+};
+
+const isCustomStat = (value: unknown): value is CustomStat => {
+  return isCustomStatDefinition(value);
+};
+
+// =============================================================================
+
 export const settingsPropTypeCheck: {
   [key in keyof AboutBlankSettings]: (value: unknown) => boolean;
 } = {
-  addActionsToNewTabs: (value: unknown) => isBool(value),
   iconTextGap: (value: unknown) => {
     if (!Number.isFinite(value)) {
       return false;
@@ -166,9 +197,7 @@ export const settingsPropTypeCheck: {
   },
   centerActionListVertically: (value: unknown) => isBool(value),
   deleteActionListMarginTop: (value: unknown) => isBool(value),
-  quickActions: (value: unknown) => isBool(value),
-  quickActionsIcon: (value: unknown) => typeof value === "string",
-  showActionListImage: (value: unknown) => isBool(value),
+  shortcutListEnabled: (value: unknown) => isBool(value),
   logoEnabled: (value: unknown) => isBool(value),
   logoPath: (value: unknown) => typeof value === "string",
   logoDirectory: (value: unknown) => typeof value === "string",
@@ -183,18 +212,10 @@ export const settingsPropTypeCheck: {
   },
   heatmapFrontmatterField: (value: unknown) => typeof value === "string",
   heatmapColorSegments: (value: unknown) => {
-    return Array.isArray(value) && value.every(segment => 
-      typeof segment === "object" && segment !== null &&
-      typeof segment.min === "number" && typeof segment.max === "number" && typeof segment.color === "string"
-    );
+    return Array.isArray(value) && value.every(isHeatmapColorSegment);
   },
   customStats: (value: unknown) => {
-    return Array.isArray(value) && value.every(stat => 
-      typeof stat === "object" && stat !== null &&
-      typeof stat.type === "string" && ["folder", "fileType"].includes(stat.type) &&
-      typeof stat.value === "string" &&
-      typeof stat.displayName === "string"
-    );
+    return Array.isArray(value) && value.every(isCustomStat);
   },
   statOrder: (value: unknown) => {
     return Array.isArray(value) && value.every(item => typeof item === "string");
@@ -222,6 +243,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   icon: string = 'app-window';
   newActionName: string = "";
   private draggedIndex: number | null = null;
+  private customStatEditorPopover: CustomStatEditorPopover | null = null;
+  private customStatEditorIndex: number | null = null;
+  private customStatEditorRefreshPending = false;
+  private customStatRowElements = new Map<number, HTMLElement>();
 
   constructor(app: App, plugin: AboutBlank) {
     super(app, plugin);
@@ -251,10 +276,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
             + (this.plugin.settings.settingsTab === tabName ? " is-active" : "")
         });
         tab.setText(tabLabels[tabName]);
-        tab.addEventListener("click", async () => {
-          this.plugin.settings.settingsTab = tabName;
-          await this.plugin.saveSettings();
-          this.display();
+        tab.addEventListener("click", () => {
+          void (async () => {
+            this.plugin.settings.settingsTab = tabName;
+            await this.plugin.saveSettings();
+            this.display();
+          })();
         });
       }
 
@@ -272,8 +299,13 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   renderCurrentTab = (): void => {
     const contentEl = this.containerEl.querySelector('.about-blank-settings-content');
     if (!contentEl) return;
-    
+
+    const activeCustomStatIndex = this.plugin.settings.settingsTab === "stats"
+      ? this.customStatEditorIndex
+      : null;
+    this.closeCustomStatEditor(false);
     contentEl.empty();
+    this.customStatRowElements.clear();
 
     if (this.plugin.settings.settingsTab === "shortcuts") {
       this.makeSettingsShortcuts(contentEl as HTMLElement);
@@ -281,27 +313,33 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       this.makeSettingsLogo(contentEl as HTMLElement);
     } else if (this.plugin.settings.settingsTab === "stats") {
       this.makeSettingsStats(contentEl as HTMLElement);
+      if (activeCustomStatIndex !== null && activeCustomStatIndex < this.plugin.settings.customStats.length) {
+        this.customStatEditorIndex = activeCustomStatIndex;
+        requestAnimationFrame(() => {
+          this.reopenCustomStatEditor();
+        });
+      }
     } else if (this.plugin.settings.settingsTab === "heatmap") {
+      this.customStatEditorIndex = null;
       this.makeSettingsHeatmap(contentEl as HTMLElement);
+    } else {
+      this.customStatEditorIndex = null;
     }
   };
 
   private makeSettingsShortcuts = (containerEl: HTMLElement): void => {
     const basicGroup = new SettingGroup(containerEl);
 
-    // 隐藏默认按钮
-    basicGroup.addSetting((hideDefaultSetting) => {
-      hideDefaultSetting
-        .setName("隐藏默认快捷方式")
-        .setDesc("开启时隐藏默认快捷方式, 关闭时显示默认快捷方式")
+    basicGroup.addSetting((shortcutListSetting) => {
+      shortcutListSetting
+        .setName("启用快捷方式列表")
+        .setDesc("控制是否在新标签页显示快捷方式列表")
         .addToggle((toggle) => {
           toggle
-            .setValue(this.plugin.settings.hideDefaultActions !== HIDE_DEFAULT_ACTIONS.not)
+            .setValue(this.plugin.settings.shortcutListEnabled)
             .onChange(async (value) => {
               try {
-                this.plugin.settings.hideDefaultActions = value
-                  ? HIDE_DEFAULT_ACTIONS.all
-                  : HIDE_DEFAULT_ACTIONS.not;
+                this.plugin.settings.shortcutListEnabled = value;
                 await this.plugin.saveSettings();
                 this.plugin.refreshAllNewTabs();
                 this.renderCurrentTab();
@@ -312,40 +350,22 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         });
     });
 
-    // 搜索框开关
-    basicGroup.addSetting((searchBoxSetting) => {
-      searchBoxSetting
-        .setName("搜索框")
-        .setDesc("在新标签页中嵌入 Obsidian 内置搜索框, 开启后快捷方式列表将以卡片网格样式展示")
-        .addToggle((toggle) => {
-          toggle
-            .setValue(this.plugin.settings.searchBoxEnabled)
-            .onChange(async (value) => {
-              try {
-                this.plugin.settings.searchBoxEnabled = value;
-                await this.plugin.saveSettings();
-                this.plugin.refreshAllNewTabs();
-                this.renderCurrentTab();
-              } catch (error) {
-                loggerOnError(error, "Error in settings.\n(About Blank)");
-              }
-            });
-        });
-    });
-
-    if (!this.plugin.settings.searchBoxEnabled) {
-      basicGroup.addSetting((pseudoImageSetting) => {
-        pseudoImageSetting
-          .setName("快捷方式列表装饰图片")
-          .setDesc("控制快捷方式列表右侧的装饰图片是否显示, 仅在关闭搜索框时生效")
+    if (this.plugin.settings.shortcutListEnabled) {
+      basicGroup.addSetting((hideDefaultSetting) => {
+        hideDefaultSetting
+          .setName("隐藏默认快捷方式")
+          .setDesc("开启时隐藏默认快捷方式, 关闭时显示默认快捷方式")
           .addToggle((toggle) => {
             toggle
-              .setValue(this.plugin.settings.showActionListImage)
+              .setValue(this.plugin.settings.hideDefaultActions !== HIDE_DEFAULT_ACTIONS.not)
               .onChange(async (value) => {
                 try {
-                  this.plugin.settings.showActionListImage = value;
+                  this.plugin.settings.hideDefaultActions = value
+                    ? HIDE_DEFAULT_ACTIONS.all
+                    : HIDE_DEFAULT_ACTIONS.not;
                   await this.plugin.saveSettings();
                   this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
                 } catch (error) {
                   loggerOnError(error, "Error in settings.\n(About Blank)");
                 }
@@ -354,42 +374,60 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       });
     }
 
-    // 快捷方式标题
-    new Setting(containerEl)
-      .setName("快捷方式列表")
-      .setHeading();
+    // 搜索框开关
+    basicGroup.addSetting((searchBoxSetting) => {
+      searchBoxSetting
+        .setName("搜索框")
+        .setDesc("在新标签页中嵌入 Obsidian 内置搜索框")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(this.plugin.settings.searchBoxEnabled)
+            .onChange(async (value) => {
+              try {
+                this.plugin.settings.searchBoxEnabled = value;
+                await this.plugin.saveSettings();
+                this.plugin.refreshAllNewTabs();
+              } catch (error) {
+                loggerOnError(error, "Error in settings.\n(About Blank)");
+              }
+            });
+        });
+    });
 
-    const actionsGroup = new SettingGroup(containerEl);
+    if (this.plugin.settings.shortcutListEnabled) {
+      new Setting(containerEl)
+        .setName("快捷方式列表")
+        .setHeading();
 
-    // 如果没有按钮，显示空状态提示
-    if (this.plugin.settings.actions.length === 0) {
-      actionsGroup.addSetting((emptySetting) => {
-        emptySetting.setName('还没有添加任何快捷方式');
-        emptySetting.setDesc('点击下方的"添加新快捷方式"开始创建');
-      });
-    } else {
-      // 为每个快捷方式创建设置项
-      this.plugin.settings.actions.forEach((action, index) => {
-        this.createActionSetting(actionsGroup, action, index);
+      const actionsGroup = new SettingGroup(containerEl);
+
+      if (this.plugin.settings.actions.length === 0) {
+        actionsGroup.addSetting((emptySetting) => {
+          emptySetting.setName('还没有添加任何快捷方式');
+          emptySetting.setDesc('点击下方按钮开始创建');
+        });
+      } else {
+        this.plugin.settings.actions.forEach((action, index) => {
+          this.createActionSetting(actionsGroup, action, index);
+        });
+      }
+
+      actionsGroup.addSetting((addActionSetting) => {
+        addActionSetting.addButton((button) => {
+          button
+            .setButtonText('+ 添加快捷方式')
+            .setCta()
+            .onClick(async () => {
+              const newAction = await createNewAction(this.app, '新快捷方式');
+              if (newAction) {
+                this.plugin.settings.actions.push(newAction);
+                await this.plugin.saveSettings();
+                this.renderCurrentTab();
+              }
+            });
+        });
       });
     }
-
-    // 添加新快捷方式的按钮
-    actionsGroup.addSetting((addActionSetting) => {
-      addActionSetting.addButton((button) => {
-        button
-          .setButtonText('+ 添加快捷方式')
-          .setCta()
-          .onClick(async () => {
-            const newAction = await createNewAction(this.app, '新快捷方式');
-            if (newAction) {
-              this.plugin.settings.actions.push(newAction);
-              await this.plugin.saveSettings();
-              this.renderCurrentTab();
-            }
-          });
-      });
-    });
   };
 
   private makeSettingsLogo = (containerEl: HTMLElement): void => {
@@ -421,28 +459,32 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           let logoDirectoryInput: TextComponent;
           logoDirectorySetting
             .setName("Logo 文件目录")
-            .setDesc("限制只显示指定目录下的图片文件 (留空显示所有图片)")
+            .setDesc("限制只显示指定文件夹下的图片, 可直接输入路径或从联想列表选择")
             .addText((text) => {
               logoDirectoryInput = text;
               text
-                .setPlaceholder("")
+                .setPlaceholder("例如 attachments/logo")
                 .setValue(this.plugin.settings.logoDirectory)
-                .onChange(async (value) => {
+                .onChange((value) => {
                   try {
                     this.plugin.settings.logoDirectory = value;
                   } catch (error) {
                     loggerOnError(error, "设置中出现错误\n(About Blank)");
                   }
                 });
+
+              new FolderSuggester(this.app, text.inputEl);
                 
-              logoDirectoryInput.inputEl.addEventListener('blur', async () => {
-                try {
-                  await this.plugin.saveSettings();
-                  this.plugin.refreshAllNewTabs();
-                  this.renderCurrentTab();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
+              logoDirectoryInput.inputEl.addEventListener('blur', () => {
+                void (async () => {
+                  try {
+                    await this.plugin.saveSettings();
+                    this.plugin.refreshAllNewTabs();
+                    this.renderCurrentTab();
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
+                  }
+                })();
               });
             });
         });
@@ -457,7 +499,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               text
                 .setPlaceholder("遮罩样式推荐使用透明背景的图片, 只保留形状")
                 .setValue(this.plugin.settings.logoPath)
-                .onChange(async (value) => {
+                .onChange((value) => {
                   try {
                     this.plugin.settings.logoPath = value;
                   } catch (error) {
@@ -465,14 +507,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   }
                 });
                 
-              logoTextInput.inputEl.addEventListener('blur', async () => {
-                try {
-                  await this.plugin.saveSettings();
-                  this.plugin.refreshAllNewTabs();
-                  this.renderCurrentTab();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
+              logoTextInput.inputEl.addEventListener('blur', () => {
+                void (async () => {
+                  try {
+                    await this.plugin.saveSettings();
+                    this.plugin.refreshAllNewTabs();
+                    this.renderCurrentTab();
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
+                  }
+                })();
               });
             })
             .addButton((button) => {
@@ -530,7 +574,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               text
                 .setPlaceholder(`例如: ${DEFAULT_SETTINGS.logoOpacity}`)
                 .setValue(this.plugin.settings.logoOpacity.toString())
-                .onChange(async (value) => {
+                .onChange((value) => {
                   try {
                     const num = parseFloat(value);
                     if (!settingsPropTypeCheck.logoOpacity(num)) {
@@ -542,20 +586,22 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   }
                 });
                 
-              logoOpacityInput.inputEl.addEventListener('blur', async () => {
-                try {
-                  const num = parseFloat(logoOpacityInput.getValue());
-                  if (!settingsPropTypeCheck.logoOpacity(num)) {
-                    logoOpacityInput.setValue(this.plugin.settings.logoOpacity.toString());
-                    return;
+              logoOpacityInput.inputEl.addEventListener('blur', () => {
+                void (async () => {
+                  try {
+                    const num = parseFloat(logoOpacityInput.getValue());
+                    if (!settingsPropTypeCheck.logoOpacity(num)) {
+                      logoOpacityInput.setValue(this.plugin.settings.logoOpacity.toString());
+                      return;
+                    }
+                    this.plugin.settings.logoOpacity = num;
+                    await this.plugin.saveSettings();
+                    this.plugin.refreshAllNewTabs();
+                    this.renderCurrentTab();
+                  } catch (error) {
+                    loggerOnError(error, "设置中出现错误\n(About Blank)");
                   }
-                  this.plugin.settings.logoOpacity = num;
-                  await this.plugin.saveSettings();
-                  this.plugin.refreshAllNewTabs();
-                  this.renderCurrentTab();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
+                })();
               });
             });
         });
@@ -623,10 +669,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
             .setDesc("用于计算使用 Obsidian 的天数")
             .addText((text) => {
               obsidianStartDateInput = text;
+              text.inputEl.type = 'date';
               text
-                .setPlaceholder("例如 2025-12-19")
                 .setValue(this.plugin.settings.obsidianStartDate)
-                .onChange(async (value) => {
+                .onChange((value) => {
                   try {
                     this.plugin.settings.obsidianStartDate = value;
                   } catch (error) {
@@ -634,12 +680,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   }
                 });
                 
-              obsidianStartDateInput.inputEl.addEventListener('blur', async () => {
-                try {
-                  await this.plugin.saveSettings();
-                } catch (error) {
+              obsidianStartDateInput.inputEl.addEventListener('blur', () => {
+                void this.plugin.saveSettings().catch((error) => {
                   loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
+                });
               });
             });
         });
@@ -688,75 +732,61 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
       const customStatsGroup = new SettingGroup(containerEl);
 
-      this.plugin.settings.customStats.forEach((stat, index) => {
-        customStatsGroup.addSetting((statSetting) => {
-          statSetting.setName(`统计项目 ${index + 1}`);
-          statSetting.settingEl.addClass('about-blank-stat-setting');
-          
-          statSetting.addDropdown((dropdown) => {
-            dropdown
-              .addOption("folder", "文件夹")
-              .addOption("fileType", "文件类型")
-              .setValue(stat.type)
-              .onChange(async (value: "folder" | "fileType") => {
-                this.plugin.settings.customStats[index].type = value;
-                this.plugin.settings.customStats[index].value = '';
-                await this.plugin.saveSettings();
-                this.renderCurrentTab();
-              });
-          });
+      if (this.plugin.settings.customStats.length === 0) {
+        customStatsGroup.addSetting((emptySetting) => {
+          emptySetting
+            .setName('还没有添加任何自定义统计项目')
+            .setDesc('点击下方按钮开始创建');
+        });
+      } else {
+        this.plugin.settings.customStats.forEach((stat, index) => {
+          customStatsGroup.addSetting((statHeaderSetting) => {
+            statHeaderSetting
+              .setName(stat.displayName.trim() || `统计项目 ${index + 1}`)
+              .setDesc(this.getCustomStatSummary(stat));
+            statHeaderSetting.settingEl.addClass('about-blank-stat-setting');
+            this.customStatRowElements.set(index, statHeaderSetting.settingEl);
 
-          // 内联搜索式输入（参考 form-flow 设计）
-          statSetting.addText((text) => {
-            text.setPlaceholder(stat.type === 'folder' ? "输入搜索文件夹..." : "输入搜索文件类型...")
-              .setValue(stat.value)
-              .onChange(async (value) => {
-                this.plugin.settings.customStats[index].value = value;
-                await this.plugin.saveSettings();
-              });
+            statHeaderSetting.addExtraButton((button) => {
+              button
+                .setIcon("pencil")
+                .setTooltip("编辑")
+                .onClick(() => {
+                  this.openCustomStatEditor(index);
+                });
+            });
 
-            // 为输入框附加内联建议
-            if (stat.type === 'folder') {
-              new FolderSuggester(this.app, text.inputEl);
-            } else {
-              new ExtensionSuggester(this.app, text.inputEl);
-            }
-          });
+            statHeaderSetting.addExtraButton((button) => {
+              button.setIcon("trash")
+                .setTooltip("删除")
+                .onClick(async () => {
+                  const previousEditorIndex = this.customStatEditorIndex;
+                  this.plugin.settings.customStats.splice(index, 1);
+                  if (previousEditorIndex === index) {
+                    this.customStatEditorIndex = null;
+                  } else if (previousEditorIndex !== null && previousEditorIndex > index) {
+                    this.customStatEditorIndex = previousEditorIndex - 1;
+                  }
+                  await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
+                });
+            });
 
-          statSetting.addText((text) => {
-            text.setPlaceholder("显示名称")
-              .setValue(stat.displayName)
-              .onChange(async (value) => {
-                this.plugin.settings.customStats[index].displayName = value;
-                await this.plugin.saveSettings();
-              });
-          });
-
-          statSetting.addExtraButton((button) => {
-            button.setIcon("trash")
-              .setTooltip("删除")
-              .onClick(async () => {
-                this.plugin.settings.customStats.splice(index, 1);
-                await this.plugin.saveSettings();
-                this.renderCurrentTab();
-              });
           });
         });
-      });
+      }
 
-      // 添加新统计项目按钮
-      customStatsGroup.addSetting((addStatsSetting) => {
-        addStatsSetting.addButton((button) => {
+      customStatsGroup.addSetting((addCustomStatSetting) => {
+        addCustomStatSetting.addButton((button) => {
           button
             .setButtonText("+ 添加自定义统计项目")
             .setCta()
             .onClick(async () => {
-              this.plugin.settings.customStats.push({
-                type: 'folder',
-                value: '',
-                displayName: ''
-              });
+              this.plugin.settings.customStats.push(createCustomStatDefinition());
+              this.customStatEditorIndex = this.plugin.settings.customStats.length - 1;
               await this.plugin.saveSettings();
+              this.plugin.refreshAllNewTabs();
               this.renderCurrentTab();
             });
         });
@@ -764,15 +794,189 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     }
   };
 
-  private getFileExtensions = (): string[] => {
-    const allFiles = this.app.vault.getAllLoadedFiles();
-    const extSet = new Set<string>();
-    for (const file of allFiles) {
-      if (file instanceof TFile && file.extension) {
-        extSet.add(file.extension);
-      }
+  private getCustomStatSummary = (stat: CustomStat): string => {
+    const conjunctionText = stat.filters.conjunction === CUSTOM_STAT_FILTER_CONJUNCTIONS.and
+      ? "根组: 全部满足"
+      : "根组: 任一满足";
+    const previewText = this.getCustomStatPreview(stat.filters)
+      .filter(Boolean)
+      .join(" · ");
+    const countText = `${countCustomStatFilterConditions(stat.filters)} 条条件`;
+    return [conjunctionText, countText, previewText].filter(Boolean).join(" · ");
+  };
+
+  private getCustomStatPreview = (group: CustomStatFilterGroup): string[] => {
+    return group.conditions
+      .slice(0, 2)
+      .map((node) => this.getCustomStatNodeSummary(node))
+      .filter(Boolean);
+  };
+
+  private getCustomStatNodeSummary = (node: CustomStatFilterNode): string => {
+    if (node.kind === CUSTOM_STAT_FILTER_NODE_KINDS.condition) {
+      return this.getCustomStatConditionSummary(node);
     }
-    return Array.from(extSet).sort();
+
+    const preview = this.getCustomStatPreview(node).join(" · ");
+    const prefix = node.conjunction === CUSTOM_STAT_FILTER_CONJUNCTIONS.and ? "组(全部)" : "组(任一)";
+    return preview ? `${prefix}: ${preview}` : prefix;
+  };
+
+  private getCustomStatConditionLabel = (type: CustomStatFilterConditionType): string => {
+    switch (type) {
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.folder:
+        return "文件夹";
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.fileType:
+        return "文件类型";
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.fileName:
+        return "文件名";
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.tag:
+        return "标签";
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.createdAt:
+        return "创建日期";
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.modifiedAt:
+        return "修改日期";
+      case CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter:
+        return "Frontmatter";
+      default:
+        return type;
+    }
+  };
+
+  private getCustomStatConditionSummary = (condition: CustomStatFilterCondition): string => {
+    const typeLabel = condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter
+      ? `Frontmatter.${condition.key || "字段"}`
+      : this.getCustomStatConditionLabel(condition.type);
+    const operatorLabel = this.getCustomStatOperatorLabel(condition.operator);
+    if (isOperatorValueOptional(condition.operator)) {
+      return `${typeLabel} ${operatorLabel}`;
+    }
+    return `${typeLabel} ${operatorLabel} ${condition.value || "未设置"}`;
+  };
+
+  private openCustomStatEditor = (index: number): void => {
+    const stat = this.plugin.settings.customStats[index];
+    const anchorEl = this.customStatRowElements.get(index);
+    if (!stat || !anchorEl) {
+      return;
+    }
+
+    if (this.customStatEditorIndex === index && this.customStatEditorPopover) {
+      this.closeCustomStatEditor();
+      return;
+    }
+
+    this.closeCustomStatEditor(false);
+    this.customStatEditorIndex = index;
+    this.customStatEditorPopover = new CustomStatEditorPopover(this.app, stat, {
+      anchorEl,
+      title: stat.displayName.trim() || `统计项目 ${index + 1}`,
+      onChange: async (nextStat) => {
+        if (!this.plugin.settings.customStats[index]) {
+          return;
+        }
+        this.plugin.settings.customStats[index] = nextStat;
+        this.customStatEditorRefreshPending = true;
+        await this.plugin.saveSettingsSilent();
+        this.updateCustomStatRow(index);
+      },
+      onClose: () => {
+        this.customStatEditorPopover = null;
+        this.customStatEditorIndex = null;
+        this.flushCustomStatEditorRefresh();
+      },
+    });
+    this.customStatEditorPopover.open();
+  };
+
+  private reopenCustomStatEditor = (): void => {
+    if (this.customStatEditorIndex === null) {
+      return;
+    }
+    if (!this.customStatRowElements.has(this.customStatEditorIndex)) {
+      this.customStatEditorIndex = null;
+      return;
+    }
+    this.openCustomStatEditor(this.customStatEditorIndex);
+  };
+
+  private closeCustomStatEditor = (clearIndex: boolean = true): void => {
+    const popover = this.customStatEditorPopover;
+    this.customStatEditorPopover = null;
+    if (clearIndex) {
+      this.customStatEditorIndex = null;
+    }
+    popover?.close();
+  };
+
+  private flushCustomStatEditorRefresh = (): void => {
+    if (!this.customStatEditorRefreshPending) {
+      return;
+    }
+    this.customStatEditorRefreshPending = false;
+    this.plugin.refreshAllNewTabs();
+  };
+
+  private updateCustomStatRow = (index: number): void => {
+    const rowEl = this.customStatRowElements.get(index);
+    const stat = this.plugin.settings.customStats[index];
+    if (!rowEl || !stat) {
+      return;
+    }
+
+    const nameEl = rowEl.querySelector('.setting-item-name');
+    if (nameEl) {
+      nameEl.setText(stat.displayName.trim() || `统计项目 ${index + 1}`);
+    }
+
+    const summary = this.getCustomStatSummary(stat);
+    const descEl = rowEl.querySelector('.setting-item-description');
+    if (summary) {
+      if (descEl instanceof HTMLElement) {
+        descEl.setText(summary);
+      } else {
+        rowEl.querySelector('.setting-item-info')?.createDiv({
+          cls: 'setting-item-description',
+          text: summary,
+        });
+      }
+      return;
+    }
+
+    descEl?.remove();
+  };
+
+  private getCustomStatOperatorLabel = (operator: CustomStatFilterOperator): string => {
+    switch (operator) {
+      case CUSTOM_STAT_FILTER_OPERATORS.is:
+        return "等于";
+      case CUSTOM_STAT_FILTER_OPERATORS.isNot:
+        return "不等于";
+      case CUSTOM_STAT_FILTER_OPERATORS.contains:
+        return "包含";
+      case CUSTOM_STAT_FILTER_OPERATORS.notContains:
+        return "不包含";
+      case CUSTOM_STAT_FILTER_OPERATORS.startsWith:
+        return "开头是";
+      case CUSTOM_STAT_FILTER_OPERATORS.endsWith:
+        return "结尾是";
+      case CUSTOM_STAT_FILTER_OPERATORS.regexMatch:
+        return "正则匹配";
+      case CUSTOM_STAT_FILTER_OPERATORS.before:
+        return "早于";
+      case CUSTOM_STAT_FILTER_OPERATORS.onOrBefore:
+        return "早于或等于";
+      case CUSTOM_STAT_FILTER_OPERATORS.after:
+        return "晚于";
+      case CUSTOM_STAT_FILTER_OPERATORS.onOrAfter:
+        return "晚于或等于";
+      case CUSTOM_STAT_FILTER_OPERATORS.exists:
+        return "存在";
+      case CUSTOM_STAT_FILTER_OPERATORS.notExists:
+        return "不存在";
+      default:
+        return operator;
+    }
   };
 
   /**
@@ -830,49 +1034,53 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         text.setPlaceholder('命令ID')
           .setValue(action.content.commandId);
         
-        text.inputEl.addEventListener('click', async () => {
-          const commands = (this.app as any).commands.commands;
-          const commandList = Object.values(commands).map((cmd: any) => ({
-            name: cmd.name,
-            value: cmd.id
-          }));
-          
-          const selected = await new StringSuggesterAsync(
-            this.app,
-            commandList,
-            '选择命令...'
-          ).openAndRespond();
-          
-          if (!selected.aborted && action.content.kind === ACTION_KINDS.command) {
-            action.content.commandId = selected.result.value;
-            action.content.commandName = commandList.find(c => c.value === selected.result.value)?.name || '';
-            text.setValue(selected.result.value);
-            await this.plugin.saveSettings();
-          }
+        text.inputEl.addEventListener('click', () => {
+          void (async () => {
+            const commands = (this.app as unknown as UnsafeApp).commands.commands;
+            const commandList = commands.map((cmd) => ({
+              name: cmd.name,
+              value: cmd.id,
+            }));
+            
+            const selected = await new StringSuggesterAsync(
+              this.app,
+              commandList,
+              '选择命令...'
+            ).openAndRespond();
+            
+            if (!selected.aborted && action.content.kind === ACTION_KINDS.command) {
+              action.content.commandId = selected.result.value;
+              action.content.commandName = commandList.find(c => c.value === selected.result.value)?.name || '';
+              text.setValue(selected.result.value);
+              await this.plugin.saveSettings();
+            }
+          })();
         });
       } else if (action.content.kind === ACTION_KINDS.file) {
         text.setPlaceholder('文件路径')
           .setValue(action.content.filePath);
         
-        text.inputEl.addEventListener('click', async () => {
-          const files = this.app.vault.getMarkdownFiles();
-          const fileList = files.map(file => ({
-            name: file.path,
-            value: file.path
-          }));
-          
-          const selected = await new StringSuggesterAsync(
-            this.app,
-            fileList,
-            '选择文件...'
-          ).openAndRespond();
-          
-          if (!selected.aborted && action.content.kind === ACTION_KINDS.file) {
-            action.content.filePath = selected.result.value;
-            action.content.fileName = selected.result.value;
-            text.setValue(selected.result.value);
-            await this.plugin.saveSettings();
-          }
+        text.inputEl.addEventListener('click', () => {
+          void (async () => {
+            const files = this.app.vault.getMarkdownFiles();
+            const fileList = files.map(file => ({
+              name: file.path,
+              value: file.path,
+            }));
+            
+            const selected = await new StringSuggesterAsync(
+              this.app,
+              fileList,
+              '选择文件...'
+            ).openAndRespond();
+            
+            if (!selected.aborted && action.content.kind === ACTION_KINDS.file) {
+              action.content.filePath = selected.result.value;
+              action.content.fileName = selected.result.value;
+              text.setValue(selected.result.value);
+              await this.plugin.saveSettings();
+            }
+          })();
         });
       }
 
@@ -916,28 +1124,30 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       iconPreview.empty();
       try {
         setIcon(iconPreview, iconName || 'help-circle');
-      } catch (error) {
+      } catch {
         iconPreview.setText('?');
       }
     };
 
     updateIconDisplay(action.icon);
 
-    iconButton.addEventListener('click', async () => {
-      const iconIds = getIconIds();
-      iconIds.unshift('*无图标*');
-      
-      const response = await new IconSuggesterAsync(
-        this.app,
-        iconIds,
-        action.icon || '图标...'
-      ).openAndRespond();
-      
-      if (!response.aborted) {
-        action.icon = response.result === '*无图标*' ? '' : response.result;
-        updateIconDisplay(action.icon);
-        await this.plugin.saveSettings();
-      }
+    iconButton.addEventListener('click', () => {
+      void (async () => {
+        const iconIds = getIconIds();
+        iconIds.unshift('*无图标*');
+        
+        const response = await new IconSuggesterAsync(
+          this.app,
+          iconIds,
+          action.icon || '图标...'
+        ).openAndRespond();
+        
+        if (!response.aborted) {
+          action.icon = response.result === '*无图标*' ? '' : response.result;
+          updateIconDisplay(action.icon);
+          await this.plugin.saveSettings();
+        }
+      })();
     });
 
     iconButton.setAttribute('aria-label', `图标: ${action.icon || 'help-circle'}`);
@@ -1015,7 +1225,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       element.classList.remove('drag-over');
 
       if (this.draggedIndex !== null && this.draggedIndex !== index) {
-        this.reorderActions(this.draggedIndex, index);
+        void this.reorderActions(this.draggedIndex, index);
       }
     });
   };

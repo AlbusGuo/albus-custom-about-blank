@@ -10,12 +10,16 @@ import {
 
 export type ConstructableWorkspaceSplit = new (ws: Workspace, dir: "horizontal" | "vertical") => WorkspaceSplit;
 
-export const UNSAFE_CSS_CLASSES = {
-  defaultEmptyAction: "empty-state-action tappable",
-  defaultCloseAction: "mod-close",
-} as const;
+export type UnsafeWorkspaceSplit = WorkspaceSplit & {
+  containerEl: HTMLElement;
+  getRoot: () => WorkspaceSplit;
+  getContainer: () => WorkspaceSplit;
+};
 
-// =============================================================================
+export type UnsafeWorkspaceWithLayoutChange = Workspace & {
+  rootSplit: WorkspaceSplit;
+  onLayoutChange: () => void;
+};
 
 export const UNSAFE_VIEW_TYPES = {
   empty: "empty",
@@ -32,6 +36,13 @@ export interface UnsafeEmptyView extends View {
   // This is the element that displays the message (div.empty-state-title).
   emptyTitleEl: HTMLDivElement;
 }
+
+export type UnsafeStatefulView = View & {
+  setState: (
+    state: { query: string; triggerBySelf: boolean },
+    result?: { history: boolean },
+  ) => Promise<void> | void;
+};
 
 // =============================================================================
 

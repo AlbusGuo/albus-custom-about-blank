@@ -1,4 +1,6 @@
 // Avoid name collision to Obsidian's "isBoolean"
-export default (value: any) => {
-  return Object.prototype.toString.call(value) === "[object Boolean]";
+const isBool = (value: unknown): value is boolean => {
+  return typeof value === "boolean";
 };
+
+export default isBool;

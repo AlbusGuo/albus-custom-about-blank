@@ -5,20 +5,18 @@ import {
   Notice,
   Plugin,
   setIcon,
+  type WorkspaceLeaf,
   WorkspaceSplit,
 } from "obsidian";
 
 import {
   type Action,
-  ACTION_KINDS,
   actionPropTypeCheck,
-  allActionsBloodline,
   NEW_ACTION,
   newActionClone,
 } from "src/settings/action-basic";
 
 import {
-  groupingActions,
   type PracticalAction,
   toPracticalAction,
 } from "src/settings/action-edit";
@@ -34,7 +32,6 @@ import {
 import {
   type AboutBlankSettings,
   AboutBlankSettingTab,
-  DEFAULT_SETTINGS,
   defaultSettingsClone,
   settingsPropTypeCheck,
 } from "src/settings/settingTab";
@@ -44,6 +41,13 @@ import hasClassElements from "src/utils/hasClassElements";
 import isFalsyString from "src/utils/isFalsyString";
 
 import isPlainObject from "src/utils/isPlainObject";
+
+import {
+  findFirstCustomStatCondition,
+  matchesCustomStatDefinition,
+  normalizeCustomStatDefinitions,
+  toCustomStatFilterGroup,
+} from "src/utils/customStatFilters";
 
 import {
   adjustInt,
@@ -56,21 +60,36 @@ import {
 } from "src/constants";
 
 import {
-  UNSAFE_CSS_CLASSES,
   UNSAFE_VIEW_TYPES,
   type UnsafeEmptyView,
-  type UnsafeApp,
   type ConstructableWorkspaceSplit,
+  type UnsafeStatefulView,
+  type UnsafeWorkspaceSplit,
+  type UnsafeWorkspaceWithLayoutChange,
 } from "src/unsafe";
 
 import { HeatmapFilesModal } from "src/ui/heatmapFilesModal";
 // =============================================================================
 
+type StatItem = { id: string; label: string; value: number | string };
+type HeatmapDateCountMap = Record<string, number>;
+type HeatmapColorSegment = AboutBlankSettings["heatmapColorSegments"][number];
+type CustomStat = AboutBlankSettings["customStats"][number];
+
+interface ContributionItem {
+  date: string;
+  weekDay: number;
+  month: number;
+  monthDate: number;
+  year: number;
+  count: number;
+}
+
 export default class AboutBlank extends Plugin {
   settings: AboutBlankSettings;
 
   // 性能优化：类级别的缓存
-  private statsCache: Array<{id: string; label: string; value: number | string}> | null = null;
+  private statsCache: StatItem[] | null = null;
   private statsCacheTimestamp: number = 0;
   private readonly STATS_CACHE_DURATION = 5000;
 
@@ -89,11 +108,12 @@ export default class AboutBlank extends Plugin {
   private pluginReady = false;
 
   // 嵌入式搜索视图的清理列表
-  private embeddedSearchCleanups: Array<() => void> = [];
+  private embeddedSearchCleanups: Array<(detachLeaf: boolean) => void> = [];
 
   async onload() {
     try {
-      await this.loadSettingsShallow();
+      await this.loadSettings();
+      this.syncEmptyStateDisplayMode();
       this.app.workspace.onLayoutReady(this.backBurner);
 
       this.registerEvent(
@@ -106,7 +126,6 @@ export default class AboutBlank extends Plugin {
       if (this.settings.deleteActionListMarginTop) {
         editStyles.rewriteCssVars.emptyStateListMarginTop.centered();
       }
-      this.closeAllNewTabs();
 
       this.addSettingTab(new AboutBlankSettingTab(this.app, this));
     } catch (error) {
@@ -116,7 +135,8 @@ export default class AboutBlank extends Plugin {
 
   backBurner = async () => {
     try {
-      await this.loadSettingsDeep();
+      await this.loadSettings();
+      this.syncEmptyStateDisplayMode();
 
       // Logo 和热力图依赖 vault 文件索引, 必须在 onLayoutReady 后执行
       this.applyLogoSettings();
@@ -150,8 +170,7 @@ export default class AboutBlank extends Plugin {
       this.heatmapObserver = null;
     }
     // 清理嵌入式搜索视图
-    this.embeddedSearchCleanups.forEach((cleanup) => cleanup());
-    this.embeddedSearchCleanups = [];
+    this.cleanupEmbeddedSearches(false);
     // 清理 CSS 变量
     const root = document.documentElement;
     root.style.removeProperty('--about-blank-heatmap-enabled');
@@ -159,21 +178,17 @@ export default class AboutBlank extends Plugin {
     root.style.removeProperty('--about-blank-logo-size');
     root.style.removeProperty('--about-blank-logo-opacity');
     root.style.removeProperty('--about-blank-logo-position');
-
-    this.closeAllNewTabs();
   }
 
   // ---------------------------------------------------------------------------
 
-  loadSettingsShallow = async () => {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as AboutBlankSettings;
-  };
-
-  loadSettingsDeep = async () => {
-    this.settings = Object.assign({}, defaultSettingsClone(), await this.loadData()) as AboutBlankSettings;
+  loadSettings = async () => {
+    this.settings = this.sanitizeSettingsShape(await this.loadData());
   };
 
   saveSettings = async () => {
+    this.settings = this.sanitizeSettingsShape(this.settings);
+    this.syncEmptyStateDisplayMode();
     await this.saveData(this.settings);
     // 清除热力图缓存，确保下次渲染使用最新数据
     this.heatmapDataCache = null;
@@ -184,73 +199,250 @@ export default class AboutBlank extends Plugin {
 
   // 保存设置但不刷新页面
   saveSettingsSilent = async () => {
+    this.settings = this.sanitizeSettingsShape(this.settings);
+    this.syncEmptyStateDisplayMode();
     await this.saveData(this.settings);
   };
 
-  // ---------------------------------------------------------------------------
+  sanitizeSettingsShape = (loadedSettings: unknown): AboutBlankSettings => {
+    const defaults = defaultSettingsClone();
+    if (!isPlainObject(loadedSettings)) {
+      return defaults;
+    }
+
+    const setProp = <T extends object, K extends keyof T>(obj: T, key: K, value: T[K]): void => {
+      obj[key] = value;
+    };
+    const sanitizedSettings = { ...defaults } as AboutBlankSettings;
+    const loadedSettingsRecord = loadedSettings as Partial<AboutBlankSettings>;
+    const settingKeys = Object.keys(defaults) as Array<keyof AboutBlankSettings>;
+
+    settingKeys.forEach((key) => {
+      if (key in loadedSettingsRecord) {
+        setProp(sanitizedSettings, key, loadedSettingsRecord[key] as AboutBlankSettings[typeof key]);
+      }
+    });
+
+    sanitizedSettings.customStats = normalizeCustomStatDefinitions(loadedSettingsRecord.customStats);
+
+    if (
+      !('shortcutListEnabled' in loadedSettingsRecord)
+      && 'customShortcutsEnabled' in (loadedSettings as Record<string, unknown>)
+    ) {
+      sanitizedSettings.shortcutListEnabled = (loadedSettings as { customShortcutsEnabled?: boolean }).customShortcutsEnabled === true;
+    }
+
+    const isLegacyConfigWithoutShortcutToggle = !('shortcutListEnabled' in loadedSettingsRecord)
+      && !('customShortcutsEnabled' in (loadedSettings as Record<string, unknown>));
+    const hasNoCustomActions = !Array.isArray(loadedSettingsRecord.actions) || loadedSettingsRecord.actions.length === 0;
+    const hasNoVisibleCustomFeatures = loadedSettingsRecord.searchBoxEnabled !== true
+      && loadedSettingsRecord.logoEnabled !== true
+      && loadedSettingsRecord.showStats !== true
+      && loadedSettingsRecord.heatmapEnabled !== true;
+
+    if (
+      isLegacyConfigWithoutShortcutToggle
+      && hasNoCustomActions
+      && hasNoVisibleCustomFeatures
+      && loadedSettingsRecord.hideDefaultActions === HIDE_DEFAULT_ACTIONS.all
+    ) {
+      sanitizedSettings.hideDefaultActions = HIDE_DEFAULT_ACTIONS.not;
+    }
+
+    return sanitizedSettings;
+  };
 
   // ---------------------------------------------------------------------------
 
-  closeAllNewTabs = (): void => {
-    const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
-    if (emptyLeaves.length === 0) {
+  private shouldRenderShortcutList = (): boolean => {
+    return this.settings.shortcutListEnabled;
+  };
+
+  private shouldRenderCustomShortcuts = (): boolean => {
+    return this.settings.shortcutListEnabled && this.settings.actions.length > 0;
+  };
+
+  private shouldShowDefaultShortcuts = (): boolean => {
+    return this.settings.shortcutListEnabled
+      && this.settings.hideDefaultActions !== HIDE_DEFAULT_ACTIONS.all;
+  };
+
+  private shouldUseCardLayout = (): boolean => {
+    return this.settings.shortcutListEnabled
+      && (this.shouldShowDefaultShortcuts() || this.shouldRenderCustomShortcuts());
+  };
+
+  private shouldShowShortcutSection = (): boolean => {
+    return this.shouldShowDefaultShortcuts() || this.shouldRenderCustomShortcuts();
+  };
+
+  private shouldCustomizeNewTab = (): boolean => {
+    return this.shouldRenderShortcutList()
+      || this.settings.searchBoxEnabled
+      || this.settings.logoEnabled
+      || this.settings.showStats
+      || this.settings.heatmapEnabled
+      || (this.settings.shortcutListEnabled && this.settings.hideDefaultActions !== HIDE_DEFAULT_ACTIONS.not);
+  };
+
+  private syncEmptyStateDisplayMode = (): void => {
+    if (this.shouldCustomizeNewTab()) {
+      editStyles.rewriteCssVars.emptyStateDisplay.hide();
       return;
     }
-    emptyLeaves.forEach((leaf) => {
-      leaf.detach();
+    editStyles.rewriteCssVars.emptyStateDisplay.default();
+  };
+
+  private restoreDefaultActionElement = (actionEl: HTMLElement): void => {
+    const originalLabel = actionEl.dataset.aboutBlankDefaultLabel?.trim()
+      || actionEl.textContent?.trim()
+      || actionEl.getAttribute('aria-label')?.trim()
+      || '';
+
+    actionEl.removeAttribute('hidden');
+    actionEl.classList.remove('about-blank-card-item', CSS_CLASSES.visible);
+    actionEl.empty();
+
+    if (originalLabel) {
+      actionEl.setText(originalLabel);
+      actionEl.setAttribute('aria-label', originalLabel);
+    }
+  };
+
+  private getDefaultActionElements = (actionListEl: HTMLElement): HTMLElement[] => {
+    return Array.from(actionListEl.children).filter((child): child is HTMLElement => {
+      return child instanceof HTMLElement && !child.classList.contains(CSS_CLASSES.aboutBlankContainer);
     });
   };
 
+  private syncActionListPresentation = (emptyView: UnsafeEmptyView, actionListEl: HTMLElement): void => {
+    const shouldShowShortcutSection = this.shouldShowShortcutSection();
+
+    actionListEl.toggleAttribute('hidden', !shouldShowShortcutSection);
+
+    if (shouldShowShortcutSection) {
+      emptyView.emptyTitleEl.classList.add(CSS_CLASSES.visible);
+    } else {
+      emptyView.emptyTitleEl.classList.remove(CSS_CLASSES.visible);
+    }
+
+    actionListEl.classList.toggle('about-blank-card-grid', this.shouldUseCardLayout());
+
+    this.getDefaultActionElements(actionListEl).forEach((actionEl) => {
+      this.restoreDefaultActionElement(actionEl);
+
+      if (!this.shouldShowDefaultShortcuts()) {
+        actionEl.setAttribute('hidden', 'true');
+        return;
+      }
+
+      actionEl.classList.add(CSS_CLASSES.visible);
+      this.addLucideIconToDefaultAction(actionEl, true);
+    });
+  };
+
+  private cleanupRenderedNewTab = (emptyView: UnsafeEmptyView, container: HTMLElement | null): void => {
+    const actionListEl = emptyView.actionListEl;
+    if (!actionListEl) {
+      return;
+    }
+
+    actionListEl.classList.remove('about-blank-card-grid');
+    Array.from(actionListEl.children).forEach((child) => {
+      const actionEl = child as HTMLElement;
+      if (actionEl.classList.contains(CSS_CLASSES.aboutBlankContainer)) {
+        actionEl.remove();
+        return;
+      }
+      this.restoreDefaultActionElement(actionEl);
+    });
+
+    emptyView.emptyTitleEl?.classList.remove(CSS_CLASSES.visible);
+
+    container?.classList.remove('about-blank-managed');
+    container?.classList.remove(
+      'about-blank-search-layout',
+      'about-blank-card-layout',
+      'about-blank-stats-bubble-mode',
+      'about-blank-stats-inline-mode',
+      'about-blank-loading',
+      'about-blank-ready',
+    );
+    container?.querySelector('.about-blank-loader')?.remove();
+    container?.querySelectorAll('.about-blank-logo').forEach((el) => el.remove());
+    container?.querySelectorAll('.about-blank-embedded-search').forEach((el) => el.remove());
+    container?.querySelectorAll('.about-blank-heatmap-container').forEach((el) => el.remove());
+    container?.querySelectorAll('.about-blank-stats-bubbles, .about-blank-stats-inline').forEach((el) => el.remove());
+  };
+
+  private cleanupEmbeddedSearches = (detachLeaves: boolean): void => {
+    this.embeddedSearchCleanups.forEach((cleanup) => cleanup(detachLeaves));
+    this.embeddedSearchCleanups = [];
+  };
+
+  private getLoadedFiles = (): TFile[] => {
+    return this.app.vault.getAllLoadedFiles().filter((file): file is TFile => file instanceof TFile);
+  };
+
+  private parseFrontmatterDate = (value: unknown): Date | null => {
+    if (!(typeof value === "string" || typeof value === "number" || value instanceof Date)) {
+      return null;
+    }
+
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return null;
+    }
+
+    return parsedDate;
+  };
+
+  // ---------------------------------------------------------------------------
+
   refreshAllNewTabs = (): void => {
+    this.syncEmptyStateDisplayMode();
+    const activeLeaf = this.app.workspace.getMostRecentLeaf();
     const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
     if (emptyLeaves.length === 0) {
       return;
     }
 
     // 清理所有嵌入搜索视图
-    this.embeddedSearchCleanups.forEach((cleanup) => cleanup());
-    this.embeddedSearchCleanups = [];
+    this.cleanupEmbeddedSearches(true);
 
     emptyLeaves.forEach((leaf) => {
       const emptyView = leaf.view as UnsafeEmptyView;
       const actionListEl = emptyView.actionListEl;
-      if (!actionListEl) {
-        return;
-      }
-      // 移除自定义按钮
-      const customButtons = actionListEl.querySelectorAll(`.${CSS_CLASSES.aboutBlankContainer}`);
-      customButtons.forEach((button) => button.remove());
-      // 移除卡片网格标记
-      actionListEl.classList.remove('about-blank-card-grid');
-
-      const container = actionListEl.closest('.empty-state-container') as HTMLElement | null;
-      container?.classList.remove('about-blank-search-layout', 'about-blank-card-layout');
-      container?.classList.remove('about-blank-stats-bubble-mode', 'about-blank-stats-inline-mode');
-      container?.querySelectorAll('.about-blank-logo').forEach((el) => el.remove());
-      // 移除嵌入搜索视图
-      container?.querySelectorAll('.about-blank-embedded-search').forEach((el) => el.remove());
-      // 移除热力图容器（让 globalRenderHeatmap 重新创建）
-      container?.querySelectorAll('.about-blank-heatmap-container').forEach((el) => {
-        (el as HTMLElement).innerHTML = '';
-      });
-      // 移除统计气泡/内联统计
-      container?.querySelectorAll('.about-blank-stats-bubbles, .about-blank-stats-inline').forEach((el) => el.remove());
-      // 重置就绪状态以准备重新渲染
-      if (container) {
-        container.classList.remove('about-blank-ready');
-      }
+      const container = actionListEl?.closest('.empty-state-container');
+      this.cleanupRenderedNewTab(emptyView, container instanceof HTMLElement ? container : null);
     });
 
     // 如果插件就绪，重新渲染所有标签页
-    if (this.pluginReady) {
+    if (this.pluginReady && this.shouldCustomizeNewTab()) {
       emptyLeaves.forEach((leaf) => {
         const emptyView = leaf.view as UnsafeEmptyView;
         const actionListEl = emptyView.actionListEl;
         if (!actionListEl) return;
-        const container = actionListEl.closest('.empty-state-container') as HTMLElement | null;
-        this.renderNewTabContent(emptyView, container);
+        const container = actionListEl.closest('.empty-state-container');
+        this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
       });
     }
+
+    this.restoreActiveLeaf(activeLeaf);
+  };
+
+  private restoreActiveLeaf = (leaf: WorkspaceLeaf | null): void => {
+    if (!leaf || this.app.workspace.getMostRecentLeaf() === leaf) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      try {
+        this.app.workspace.setActiveLeaf(leaf, { focus: false });
+      } catch (error) {
+        loggerOnError(error, "恢复活动视图失败\n(About Blank)");
+      }
+    }, 0);
   };
 
   private addButtonsEventHandler = (): void => {
@@ -264,19 +456,27 @@ export default class AboutBlank extends Plugin {
   private addButtonsToNewTab = (emptyView: UnsafeEmptyView): void => {
     try {
       const emptyActionListEl = emptyView.actionListEl;
-      const emptyTitleEl = emptyView.emptyTitleEl;
       const childElements = emptyActionListEl
         ? Array.from(emptyActionListEl.children) as HTMLElement[]
         : null;
-      this.applyVisibleClass(emptyTitleEl, childElements);
       if (!emptyActionListEl || !childElements) {
         return;
       }
-      if (this.alreadyAdded(childElements)) {
+
+      const container = emptyActionListEl.closest('.empty-state-container');
+
+      if (!this.shouldCustomizeNewTab()) {
+        this.cleanupRenderedNewTab(emptyView, container instanceof HTMLElement ? container : null);
         return;
       }
 
-      const container = emptyActionListEl.closest('.empty-state-container') as HTMLElement | null;
+      if (container?.classList.contains('about-blank-ready')) {
+        return;
+      }
+
+      if (this.alreadyAdded(childElements)) {
+        return;
+      }
 
       if (!this.pluginReady) {
         // 插件尚未就绪：显示进度条，等待 backBurner 完成后统一渲染
@@ -284,14 +484,15 @@ export default class AboutBlank extends Plugin {
           container.classList.add('about-blank-loading');
           const loader = document.createElement('div');
           loader.className = 'about-blank-loader';
-          loader.innerHTML = '<div class="about-blank-loader-bar"><div class="about-blank-loader-bar-fill"></div></div>';
+          const loaderBar = loader.createEl('div', { cls: 'about-blank-loader-bar' });
+          loaderBar.createEl('div', { cls: 'about-blank-loader-bar-fill' });
           container.appendChild(loader);
         }
         return;
       }
 
       // 插件就绪：一次性渲染所有内容
-      this.renderNewTabContent(emptyView, container);
+      this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
     } catch (error) {
       loggerOnError(error, "在空文件视图（新标签页）中添加按钮失败\n(About Blank)");
     }
@@ -304,10 +505,10 @@ export default class AboutBlank extends Plugin {
       const emptyView = leaf.view as UnsafeEmptyView;
       const actionListEl = emptyView.actionListEl;
       if (!actionListEl) return;
-      const container = actionListEl.closest('.empty-state-container') as HTMLElement | null;
+      const container = actionListEl.closest('.empty-state-container');
       // 已经渲染过的跳过
       if (container?.classList.contains('about-blank-ready')) return;
-      this.renderNewTabContent(emptyView, container);
+      this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
     });
   };
 
@@ -316,12 +517,20 @@ export default class AboutBlank extends Plugin {
     const emptyActionListEl = emptyView.actionListEl;
     if (!emptyActionListEl) return;
 
+    if (!this.shouldCustomizeNewTab()) {
+      this.cleanupRenderedNewTab(emptyView, container);
+      return;
+    }
+
+    container?.classList.add('about-blank-managed');
+
     container?.classList.toggle('about-blank-search-layout', this.settings.searchBoxEnabled);
-    container?.classList.toggle('about-blank-card-layout', this.settings.searchBoxEnabled);
+    container?.classList.toggle('about-blank-card-layout', this.shouldUseCardLayout());
+
+    this.syncActionListPresentation(emptyView, emptyActionListEl);
 
     // 确保可见性
     const childElements = Array.from(emptyActionListEl.children) as HTMLElement[];
-    this.applyVisibleClass(emptyView.emptyTitleEl, childElements);
 
     // 如果已添加过自定义按钮则跳过
     if (this.alreadyAdded(childElements)) {
@@ -354,11 +563,8 @@ export default class AboutBlank extends Plugin {
     const practicalActions: PracticalAction[] = this.settings.actions
       .map((action) => toPracticalAction(this.app, action))
       .filter((action) => action !== undefined);
-    if (this.settings.searchBoxEnabled) {
+    if (this.shouldRenderCustomShortcuts()) {
       this.addActionButtonsAsCards(emptyActionListEl, practicalActions);
-    } else {
-      emptyActionListEl.classList.remove('about-blank-card-grid');
-      practicalActions.forEach((action) => this.addActionButton(emptyActionListEl, action));
     }
 
     // 5. 渲染热力图（最底部，按钮下方）
@@ -375,33 +581,6 @@ export default class AboutBlank extends Plugin {
     }
   };
 
-  private applyVisibleClass = (messageEl: HTMLElement | null, actionEls: HTMLElement[] | null): void => {
-    if (messageEl && !messageEl.classList.contains(CSS_CLASSES.visible)) {
-      messageEl.classList.add(CSS_CLASSES.visible);
-    }
-
-    if (!actionEls) {
-      return;
-    }
-    if (this.settings.hideDefaultActions === HIDE_DEFAULT_ACTIONS.all) {
-      return;
-    }
-    if (this.settings.hideDefaultActions === HIDE_DEFAULT_ACTIONS.close) {
-      actionEls = actionEls.filter((elem) => {
-        return !elem.classList.contains(UNSAFE_CSS_CLASSES.defaultCloseAction);
-      });
-    }
-    actionEls.map((elem) => {
-      if (elem.classList.contains(CSS_CLASSES.visible)) {
-        return;
-      }
-      elem.classList.add(CSS_CLASSES.visible);
-      
-      // 为默认 action 应用统一图标/卡片结构
-      this.addLucideIconToDefaultAction(elem, this.settings.searchBoxEnabled);
-    });
-  };
-
   private addLucideIconToDefaultAction = (actionEl: HTMLElement, cardLayout: boolean): void => {
     const storedLabel = actionEl.dataset.aboutBlankDefaultLabel?.trim();
     const currentText = actionEl.textContent?.trim() || '';
@@ -410,6 +589,7 @@ export default class AboutBlank extends Plugin {
     if (originalText) {
       actionEl.dataset.aboutBlankDefaultLabel = originalText;
       actionEl.setAttribute('aria-label', originalText);
+      actionEl.removeAttribute('title');
     }
     
     let iconName = 'file';
@@ -477,34 +657,7 @@ export default class AboutBlank extends Plugin {
     return classesToAdd.some((className) => hasClassElements(elements, className));
   };
 
-  private addActionButton = (element: HTMLElement, action: PracticalAction): void => {
-    const container = element.createEl(
-      "div",
-      {
-        cls: `${UNSAFE_CSS_CLASSES.defaultEmptyAction} ${CSS_CLASSES.visible} ${CSS_CLASSES.aboutBlankContainer}`,
-      },
-      (elem: Element) => {
-        elem.addEventListener("click", () => {
-          void action.callback();
-        });
-      },
-    );
-    
-    container.setAttribute('aria-label', action.name);
-    
-    if (!isFalsyString(action.icon)) {
-      setIcon(container, action.icon);
-    }
-    container.createEl(
-      "div",
-      {
-        cls: `${CSS_CLASSES.visible} ${CSS_CLASSES.aboutBlank}`,
-        text: `${action.name}`,
-      },
-    );
-  };
-
-  // 卡片网格样式按钮（搜索框开启时使用）
+  // 卡片网格样式按钮
   private addActionButtonsAsCards = (actionListEl: HTMLElement, actions: PracticalAction[]): void => {
     // 为 action list 添加卡片网格标记
     actionListEl.classList.add('about-blank-card-grid');
@@ -521,6 +674,9 @@ export default class AboutBlank extends Plugin {
           });
         },
       );
+
+      card.setAttribute('aria-label', action.name);
+      card.removeAttribute('title');
 
       const iconEl = card.createEl("div", { cls: "about-blank-card-icon" });
       if (!isFalsyString(action.icon)) {
@@ -543,6 +699,12 @@ export default class AboutBlank extends Plugin {
   //
   private createEmbeddedSearch = (actionListEl: HTMLElement, _emptyView: UnsafeEmptyView): void => {
     try {
+      const existingSearch = actionListEl.parentElement?.querySelector('.about-blank-embedded-search');
+      if (existingSearch) {
+        return;
+      }
+      const previousActiveLeaf = this.app.workspace.getMostRecentLeaf();
+
       // 占位器（固定 56px，参与文档流）
       const placeholderEl = document.createElement("div");
       placeholderEl.className = "about-blank-embedded-search";
@@ -563,46 +725,59 @@ export default class AboutBlank extends Plugin {
       // --- Float Search 引擎：WorkspaceSplit + 原生搜索视图 ---
       const rootSplit = new (WorkspaceSplit as unknown as ConstructableWorkspaceSplit)(
         this.app.workspace, "vertical",
-      );
-      rootSplit.getRoot = () => this.app.workspace.rootSplit!;
-      rootSplit.getContainer = () => this.app.workspace.rootSplit!;
+      ) as unknown as UnsafeWorkspaceSplit;
+      const workspaceWithLayoutChange = this.app.workspace as unknown as UnsafeWorkspaceWithLayoutChange;
+      rootSplit.getRoot = () => workspaceWithLayoutChange.rootSplit;
+      rootSplit.getContainer = () => workspaceWithLayoutChange.rootSplit;
 
-      panelEl.appendChild((rootSplit as any).containerEl);
+      panelEl.appendChild(rootSplit.containerEl);
 
-      const leaf = this.app.workspace.createLeafInParent(rootSplit, 0);
+      const leaf = this.app.workspace.createLeafInParent(rootSplit as WorkspaceSplit, 0);
       leaf.setPinned(true);
 
-      leaf.setViewState({
+      void leaf.setViewState({
         type: "search",
         active: false,
         state: { query: "", triggerBySelf: true },
       }).then(() => {
-        (this.app.workspace as any).onLayoutChange();
+        workspaceWithLayoutChange.onLayoutChange();
         setTimeout(() => {
-          if (leaf.view) {
-            leaf.view.setState(
+          const searchView = leaf.view as UnsafeStatefulView | null;
+          if (searchView) {
+            void Promise.resolve(searchView.setState(
               { query: "", triggerBySelf: true },
-              { history: false } as any,
-            );
+              { history: false },
+            )).catch((error: unknown) => {
+              loggerOnError(error, "同步嵌入搜索状态失败\n(About Blank)");
+            });
           }
+          this.restoreActiveLeaf(previousActiveLeaf);
         }, 0);
+      }).catch((error: unknown) => {
+        this.restoreActiveLeaf(previousActiveLeaf);
+        loggerOnError(error, "初始化嵌入搜索视图失败\n(About Blank)");
       });
 
       // 监听原生搜索输入框，控制展开/折叠
       const watchNativeInput = () => {
-        const nativeInput = panelEl.querySelector('.search-input-container input') as HTMLInputElement | null;
+        const nativeInput = panelEl.querySelector<HTMLInputElement>('.search-input-container input');
         if (!nativeInput) {
           setTimeout(watchNativeInput, 100);
           return;
         }
 
-        // 激活搜索框即展开（点击/聚焦面板内任何元素）
-        panelEl.addEventListener("focusin", () => {
+          const expandSearchPanel = () => {
           placeholderEl.classList.add("is-expanded");
-        });
-        panelEl.addEventListener("click", () => {
-          placeholderEl.classList.add("is-expanded");
-        });
+        };
+
+          // 光标进入输入框前后都立即展开，避免折叠态下出现已聚焦但仍未展开的瞬间。
+          panelEl.addEventListener("focusin", expandSearchPanel);
+          panelEl.addEventListener("pointerdown", expandSearchPanel);
+          nativeInput.addEventListener("focus", expandSearchPanel);
+
+          if (document.activeElement === nativeInput) {
+            expandSearchPanel();
+          }
 
         // 点击面板外部收起
         const onDocClick = (e: MouseEvent) => {
@@ -612,16 +787,23 @@ export default class AboutBlank extends Plugin {
         };
         document.addEventListener("click", onDocClick, true);
 
-        nativeInput.addEventListener("keydown", (e: KeyboardEvent) => {
+        const onNativeInputKeyDown = (e: KeyboardEvent) => {
           if (e.key === "Escape") {
             placeholderEl.classList.remove("is-expanded");
             nativeInput.blur();
           }
-        });
+        };
+        nativeInput.addEventListener("keydown", onNativeInputKeyDown);
 
-        this.embeddedSearchCleanups.push(() => {
+        this.embeddedSearchCleanups.push((detachLeaf: boolean) => {
           document.removeEventListener("click", onDocClick, true);
-          leaf.detach();
+          panelEl.removeEventListener("focusin", expandSearchPanel);
+          panelEl.removeEventListener("pointerdown", expandSearchPanel);
+          nativeInput.removeEventListener("focus", expandSearchPanel);
+          nativeInput.removeEventListener("keydown", onNativeInputKeyDown);
+          if (detachLeaf) {
+            leaf.detach();
+          }
           placeholderEl.remove();
         });
       };
@@ -655,7 +837,7 @@ export default class AboutBlank extends Plugin {
     };
 
     const normalizeActions = (actions: Action[]): Action[] => {
-      return actions.map((action) => {
+      return actions.flatMap((action) => {
         if (!isPlainObject(action)) {
           const newAction = newActionClone();
           results.push(
@@ -666,6 +848,17 @@ export default class AboutBlank extends Plugin {
             ]),
           );
           return newAction;
+        }
+        const legacyContent = action.content as unknown as Record<string, unknown>;
+        if (isPlainObject(action.content) && legacyContent.kind === "group") {
+          results.push(
+            new Map<string, unknown>([
+              ["errorType", "removed legacy grouped action"],
+              ["actionName", action.name],
+              ["actionContent", action.content],
+            ]),
+          );
+          return [];
         }
         const actionKeys = Object.keys(NEW_ACTION) as Array<keyof Action>;
         actionKeys.forEach((key) => {
@@ -685,9 +878,6 @@ export default class AboutBlank extends Plugin {
             setProp(action, key, newAction[key]);
           }
         });
-        if (action.content.kind === ACTION_KINDS.group) {
-          action.content.actions = normalizeActions(action.content.actions);
-        }
         return action;
       });
     };
@@ -709,6 +899,7 @@ export default class AboutBlank extends Plugin {
     });
 
     this.settings.actions = normalizeActions(this.settings.actions);
+    this.settings.customStats = normalizeCustomStatDefinitions(this.settings.customStats);
 
     return results;
   };
@@ -752,35 +943,35 @@ export default class AboutBlank extends Plugin {
     // 监听工作区事件，确保在标签页切换时也能渲染热力图和统计气泡
     let leafChangeTimeout: NodeJS.Timeout | null = null;
     let isProcessingLeafChange = false;
-    this.app.workspace.on('active-leaf-change', () => {
+    this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
       if (isProcessingLeafChange) return; // 如果正在处理，跳过本次变化
-      
+
       // 清除之前的超时，避免重复触发
       if (leafChangeTimeout) {
         clearTimeout(leafChangeTimeout);
       }
-      
+
       leafChangeTimeout = setTimeout(() => {
         if (isProcessingLeafChange) return; // 再次检查处理状态
-        
+
         isProcessingLeafChange = true;
-        
+
         // 渲染热力图
         if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
           this.globalRenderHeatmap();
         }
-        
+
         // 渲染统计气泡（使用防抖）- 添加 logoEnabled 检查
         if (this.settings.showStats && this.globalRenderStats) {
           this.globalRenderStats();
         }
-        
+
         // 重置处理状态
         setTimeout(() => {
           isProcessingLeafChange = false;
         }, 300);
       }, 150);
-    });
+    }));
     
     // 使用优化的MutationObserver监听DOM变化
     const workspaceContainer = document.querySelector('.workspace');
@@ -927,13 +1118,7 @@ export default class AboutBlank extends Plugin {
       if (dataSource === "fileCreation" && file.stat) {
         fileDate = new Date(file.stat.ctime);
       } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
-        const dateValue = cache.frontmatter[frontmatterField];
-        if (dateValue) {
-          const parsedDate = new Date(dateValue);
-          if (!isNaN(parsedDate.getTime())) {
-            fileDate = parsedDate;
-          }
-        }
+        fileDate = this.parseFrontmatterDate(cache.frontmatter[frontmatterField]);
       }
 
       if (fileDate && !isNaN(fileDate.getTime())) {
@@ -965,7 +1150,7 @@ export default class AboutBlank extends Plugin {
       
       // 获取所有markdown文件
       const markdownFiles = this.app.vault.getMarkdownFiles();
-      const dateCountMap: { [key: string]: number } = {};
+      const dateCountMap: HeatmapDateCountMap = {};
       
       // 初始化全年日期
       const currentDate = new Date(startDate);
@@ -982,14 +1167,8 @@ export default class AboutBlank extends Plugin {
         
         if (dataSource === "fileCreation" && file.stat) {
           fileDate = new Date(file.stat.ctime);
-        } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
-          const dateValue = cache.frontmatter[frontmatterField];
-          if (dateValue) {
-            const parsedDate = new Date(dateValue);
-            if (!isNaN(parsedDate.getTime())) {
-              fileDate = parsedDate;
-            }
-          }
+        } else if (dataSource === "frontmatter" && cache?.frontmatter) {
+          fileDate = this.parseFrontmatterDate(cache.frontmatter[frontmatterField]);
         }
         
         if (fileDate && !isNaN(fileDate.getTime())) {
@@ -1013,7 +1192,7 @@ export default class AboutBlank extends Plugin {
     }
   };
 
-  renderHeatmap = (dateCountMap: { [key: string]: number }): void => {
+  renderHeatmap = (dateCountMap: HeatmapDateCountMap): void => {
     try {
       const year = new Date().getFullYear();
       const colorSegments = this.settings.heatmapColorSegments;
@@ -1078,8 +1257,8 @@ export default class AboutBlank extends Plugin {
   };
 
   // 辅助方法：生成贡献数据
-  generateContributionData = (dateCountMap: { [key: string]: number }) => {
-    const contributionData: any[] = [];
+  generateContributionData = (dateCountMap: HeatmapDateCountMap): ContributionItem[] => {
+    const contributionData: ContributionItem[] = [];
     
     // 获取所有日期并排序
     const sortedDates = Object.keys(dateCountMap).sort();
@@ -1128,7 +1307,7 @@ export default class AboutBlank extends Plugin {
 
   // 计算所有文件的总大小（GB）
   calculateTotalFileSize = (): string => {
-    const allFiles = this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile);
+    const allFiles = this.getLoadedFiles();
     const totalBytes = allFiles.reduce((total, file) => total + file.stat.size, 0);
     const totalGB = totalBytes / (1024 * 1024 * 1024);
     return totalGB.toFixed(2);
@@ -1136,7 +1315,7 @@ export default class AboutBlank extends Plugin {
 
   // 计算所有文件的总数
   calculateTotalFileCount = (): number => {
-    return this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile).length;
+    return this.getLoadedFiles().length;
   };
 
   // 计算使用天数
@@ -1150,36 +1329,15 @@ export default class AboutBlank extends Plugin {
     return days >= 0 ? days : 0;
   };
 
-  // 计算特定文件类型的文件数量
-  calculateFileTypeCount = (fileExtension: string): number => {
-    if (!fileExtension) return 0;
-    
-    const allFiles = this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile);
-    return allFiles.filter(file => file.extension === fileExtension).length;
-  };
-
   // 计算自定义统计项目的文件数量
-  calculateCustomStatCount = (stat: any): number => {
-    if (!stat) return 0;
-    
-    const { type, value } = stat;
-    
-    switch (type) {
-      case 'folder':
-        if (!value) return 0;
-        const allFiles = this.app.vault.getAllLoadedFiles().filter(file => file instanceof TFile);
-        const folderFiles = allFiles.filter(file => {
-          const fileFolder = file.path.split('/').slice(0, -1).join('/');
-          return fileFolder === value || file.path.startsWith(value + '/');
-        });
-        return folderFiles.length;
-        
-      case 'fileType':
-        return this.calculateFileTypeCount(value);
-        
-      default:
-        return 0;
-    }
+  calculateCustomStatCount = (stat: CustomStat): number => {
+    const allFiles = this.getLoadedFiles();
+    return allFiles.filter((file) => {
+      return matchesCustomStatDefinition({
+        file,
+        cache: this.app.metadataCache.getFileCache(file),
+      }, stat);
+    }).length;
   };
 
   // 创建统计气泡
@@ -1201,7 +1359,7 @@ export default class AboutBlank extends Plugin {
         }
         
         // 基础统计项目（根据开关过滤）
-        const baseStats: Array<{id: string; label: string; value: number | string}> = [];
+        const baseStats: StatItem[] = [];
         if (this.settings.showUsageDays) {
           baseStats.push({ id: 'usage-days', label: "使用天数", value: this.calculateUsageDays() });
         }
@@ -1213,9 +1371,9 @@ export default class AboutBlank extends Plugin {
         }
 
         // 自定义统计项目
-        const customStatsItems = (this.settings.customStats || []).map((stat: any, index: number) => ({
+        const customStatsItems: StatItem[] = (this.settings.customStats || []).map((stat, index) => ({
           id: `custom-${index}`,
-          label: stat.displayName || stat.value || `统计项目${index + 1}`,
+          label: stat.displayName || findFirstCustomStatCondition(toCustomStatFilterGroup(stat))?.value || `统计项目${index + 1}`,
           value: this.calculateCustomStatCount(stat)
         }));
 
@@ -1281,7 +1439,6 @@ export default class AboutBlank extends Plugin {
       const renderStatsImmediate = renderStatsInAllLeavesImpl;
       
       // 优化的智能等待渲染函数
-      let waitTimeout: NodeJS.Timeout | null = null;
       const waitForReadyAndRender = (retryCount = 0) => {
         if (retryCount > 10) return; // 增加重试次数但减少间隔
         
@@ -1305,7 +1462,7 @@ export default class AboutBlank extends Plugin {
           renderStatsInAllLeavesImpl();
         } else {
           // 容器未准备好，等待后重试
-          waitTimeout = setTimeout(() => waitForReadyAndRender(retryCount + 1), 50); // 减少到 50ms
+          setTimeout(() => waitForReadyAndRender(retryCount + 1), 50); // 减少到 50ms
         }
       };
       
@@ -1417,9 +1574,9 @@ export default class AboutBlank extends Plugin {
               currentOrder[draggedIdx] = currentOrder[targetIdx];
               currentOrder[targetIdx] = temp;
               this.settings.statOrder = currentOrder;
-              this.saveSettingsSilent();
+                void this.saveSettingsSilent();
               // 交换气泡位置
-              const allBubbles = Array.from(statsContainer.querySelectorAll('.about-blank-stats-bubble')) as HTMLElement[];
+              const allBubbles = Array.from(statsContainer.querySelectorAll<HTMLElement>('.about-blank-stats-bubble'));
               const draggedBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === draggedStatId);
               const targetBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === targetStatId);
               if (draggedBubble && targetBubble) {
@@ -1517,9 +1674,9 @@ export default class AboutBlank extends Plugin {
               currentOrder[draggedIdx] = currentOrder[targetIdx];
               currentOrder[targetIdx] = temp;
               this.settings.statOrder = currentOrder;
-              this.saveSettingsSilent();
+                void this.saveSettingsSilent();
               // FLIP 动画交换位置
-              const allItems = Array.from(inlineContainer.querySelectorAll('.about-blank-stats-inline-item')) as HTMLElement[];
+              const allItems = Array.from(inlineContainer.querySelectorAll<HTMLElement>('.about-blank-stats-inline-item'));
               const draggedEl = allItems.find(el => el.getAttribute('data-stat-id') === draggedStatId);
               const targetEl = allItems.find(el => el.getAttribute('data-stat-id') === targetStatId);
               if (draggedEl && targetEl) {
@@ -1578,7 +1735,12 @@ export default class AboutBlank extends Plugin {
     });
   };
 
-  changeHeatmapYear = (heatmapContainer: HTMLElement, newYear: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
+  changeHeatmapYear = (
+    heatmapContainer: HTMLElement,
+    newYear: number,
+    colorSegments: HeatmapColorSegment[],
+    dateCountMap: HeatmapDateCountMap,
+  ): void => {
     // 检查是否已经有该年份的缓存数据
     if (!this.heatmapYearCache) {
       this.heatmapYearCache = {};
@@ -1588,7 +1750,7 @@ export default class AboutBlank extends Plugin {
     
     if (!yearCache[newYear]) {
       // 重新生成新年份的数据
-      const newDateCountMap: { [key: string]: number } = {};
+      const newDateCountMap: HeatmapDateCountMap = {};
       const dataSource = this.settings.heatmapDataSource;
       const frontmatterField = this.settings.heatmapFrontmatterField;
       
@@ -1614,14 +1776,8 @@ export default class AboutBlank extends Plugin {
         
         if (dataSource === "fileCreation" && file.stat) {
           fileDate = new Date(file.stat.ctime);
-        } else if (dataSource === "frontmatter" && cache && cache.frontmatter) {
-          const dateValue = cache.frontmatter[frontmatterField];
-          if (dateValue) {
-            const parsedDate = new Date(dateValue);
-            if (!isNaN(parsedDate.getTime())) {
-              fileDate = parsedDate;
-            }
-          }
+        } else if (dataSource === "frontmatter" && cache?.frontmatter) {
+          fileDate = this.parseFrontmatterDate(cache.frontmatter[frontmatterField]);
         }
         
         if (fileDate && !isNaN(fileDate.getTime())) {
@@ -1649,13 +1805,18 @@ export default class AboutBlank extends Plugin {
     this.createHeatmapContent(heatmapContainer, newYear, colorSegments, yearCache[newYear]);
   };
 
-  createHeatmapContent = (heatmapContainer: HTMLElement, year: number, colorSegments: any[], dateCountMap: { [key: string]: number }): void => {
+  createHeatmapContent = (
+    heatmapContainer: HTMLElement,
+    year: number,
+    colorSegments: HeatmapColorSegment[],
+    dateCountMap: HeatmapDateCountMap,
+  ): void => {
     try {
-      const parentLeaf = heatmapContainer.closest('.workspace-leaf-content[data-type="empty"]') as HTMLElement;
+      const parentLeaf = heatmapContainer.closest('.workspace-leaf-content[data-type="empty"]');
       
-      if (parentLeaf) {
-        const actionList = parentLeaf.querySelector('.empty-state-action-list') as HTMLElement;
-        if (actionList) {
+      if (parentLeaf instanceof HTMLElement) {
+        const actionList = parentLeaf.querySelector('.empty-state-action-list');
+        if (actionList instanceof HTMLElement) {
           const actionListWidth = actionList.offsetWidth;
           heatmapContainer.style.width = `${Math.max(actionListWidth, 800)}px`;
           heatmapContainer.style.maxWidth = 'none';
@@ -1879,7 +2040,7 @@ export default class AboutBlank extends Plugin {
               rawImageUrl = `app://local/${this.settings.logoPath}`;
               logoUrl = `url("${rawImageUrl}")`;
             }
-          } catch (error) {
+          } catch {
             // Fallback for relative paths
             rawImageUrl = `app://local/${this.settings.logoPath}`;
             logoUrl = `url("${rawImageUrl}")`;
@@ -1957,11 +2118,7 @@ export default class AboutBlank extends Plugin {
         document.querySelectorAll('.about-blank-stats-bubbles').forEach(el => el.remove());
         document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
       }
-      
-      // 应用按钮栏装饰图片设置
-      const root2 = document.documentElement;
-      root2.style.setProperty('--about-blank-action-list-image-display', this.settings.showActionListImage && !this.settings.searchBoxEnabled ? 'block' : 'none');
-      
+
       // Force a reflow to ensure styles are applied
       setTimeout(() => {
         const event = new Event('resize');
@@ -2037,7 +2194,7 @@ export default class AboutBlank extends Plugin {
         nameEl.textContent = file.name;
         
         // 添加点击事件
-        itemEl.addEventListener('click', async () => {
+        itemEl.addEventListener('click', () => {
           // 选择图片
           
           // 移除之前的选中状态
@@ -2102,7 +2259,7 @@ export default class AboutBlank extends Plugin {
     try {
       // 获取所有文件夹
       const files = this.app.vault.getAllLoadedFiles();
-      const folders = files.filter(file => file instanceof TFolder) as TFolder[];
+      const folders = files.filter((file): file is TFolder => file instanceof TFolder);
       
       // 创建文件夹选择器
       const modal = new Modal(this.app);

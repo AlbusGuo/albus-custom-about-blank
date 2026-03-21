@@ -1,52 +1,19 @@
 import {
   type App,
-  setIcon,
-  Setting,
   type TFile,
 } from "obsidian";
 
 import {
-  type Action,
-  ACTION_INFO_ICON,
   ACTION_KINDS,
-  ACTION_KINDS_ICON,
   ACTION_KINDS_NAME,
-  type ContentOfGroup,
   type ContentType,
-  createNewAction,
   newContentOfCommandClone,
   newContentOfFileClone,
-  newContentOfGroupClone,
 } from "src/settings/action-basic";
-
-import {
-  moveAction,
-} from "src/settings/action-edit";
-
-import {
-  ActionSettingsModal,
-} from "src/settings/action-settingsModal";
-
-import {
-  type AboutBlankSettings,
-  type AboutBlankSettingTab,
-} from "src/settings/settingTab";
 
 import {
   StringSuggesterAsync,
 } from "src/ui/stringSuggesterAsync";
-
-import isFalsyString from "src/utils/isFalsyString";
-
-import {
-  loggerOnError,
-  setFakeIconToExButtonIfEmpty,
-  setFakeIconToIconText,
-} from "src/commons";
-
-import {
-  CSS_CLASSES,
-} from "src/constants";
 
 import {
   type ValuesOf,
@@ -95,10 +62,6 @@ export const chooseContent = async (
   app: App,
   kind: ValuesOf<typeof ACTION_KINDS>,
 ): Promise<ContentType | void> => {
-  if (kind === ACTION_KINDS.group) {
-    return newContentOfGroupClone();
-  }
-
   const result = await chooseCommandOrFile(app, kind);
   if (result === undefined) {
     return;
@@ -160,185 +123,4 @@ export const chooseCommandOrFile = async (
   }
 
   return response.result;
-};
-
-// =============================================================================
-
-export const makeSettingsActionsHeader = (
-  elem: HTMLElement,
-  page: AboutBlankSettingTab | ActionSettingsModal,
-  actionsHolder: AboutBlankSettings | ContentOfGroup,
-  save: boolean,
-  cssClass: string | null = null,
-  headerName: string | null = null,
-  headerDesc: string | null = null,
-): void => {
-  if (typeof headerName === "string" && !isFalsyString(headerName)) {
-    const headerItem = new Setting(elem);
-    if (typeof cssClass === "string" && !isFalsyString(cssClass)) {
-      headerItem.setClass(cssClass);
-    }
-    headerItem.setName(headerName).setHeading();
-  }
-
-  const descItem = new Setting(elem);
-  if (typeof cssClass === "string" && !isFalsyString(cssClass)) {
-    descItem.setClass(cssClass);
-  }
-  if (typeof headerDesc === "string" && !isFalsyString(headerDesc)) {
-    descItem.setDesc(headerDesc);
-  }
-  descItem
-    .addText((text) => {
-      text
-        .setPlaceholder("New action's name...")
-        .setValue(page.newActionName)
-        .onChange((value) => {
-          try {
-            page.newActionName = value;
-          } catch (error) {
-            loggerOnError(error, "Error in settings.\n(About Blank)");
-          }
-        });
-    })
-    .addExtraButton((button) => {
-      button
-        .setIcon("plus")
-        .setTooltip("创建")
-        .onClick(async () => {
-          try {
-            const newAction = await createNewAction(
-              page.app,
-              page.newActionName,
-            );
-            if (newAction === undefined) {
-              return;
-            }
-            actionsHolder.actions.push(newAction);
-            if (save) {
-              await page.plugin.saveSettings();
-            }
-            // page.newActionName = "";
-            if (page instanceof ActionSettingsModal) {
-              page.display();
-            } else {
-              page.renderCurrentTab();
-            }
-          } catch (error) {
-            loggerOnError(error, "Error in settings.\n(About Blank)");
-          }
-        });
-      setFakeIconToExButtonIfEmpty(button.extraSettingsEl);
-    });
-};
-
-export const makeSettingsActionsList = (
-  elem: HTMLElement,
-  page: AboutBlankSettingTab | ActionSettingsModal,
-  nextPageIndex: number,
-  actionsHolder: AboutBlankSettings | ContentOfGroup,
-  save: boolean,
-  parentsDisplay?: boolean,
-): void => {
-  actionsHolder.actions.forEach((action, index) => {
-    const settingItem = new Setting(elem);
-
-    settingItem.setName(action.name);
-
-    if (typeof action.icon === "string" && !isFalsyString(action.icon)) {
-      const actionIconEl = settingItem.controlEl.createEl("div", {
-        cls: CSS_CLASSES.actionIconText,
-      });
-      setIcon(actionIconEl, action.icon);
-      setFakeIconToIconText(actionIconEl);
-    }
-
-    const kindIconEl = settingItem.controlEl.createEl("div", {
-      cls: CSS_CLASSES.iconText,
-    });
-    setIcon(kindIconEl, ACTION_KINDS_ICON[action.content.kind]);
-    setFakeIconToIconText(kindIconEl);
-
-    const contentText: string = (() => {
-      if (action.content.kind === ACTION_KINDS.command) {
-        return `${action.content.commandName}`;
-      } else if (action.content.kind === ACTION_KINDS.file) {
-        return `${action.content.fileName}`;
-      } else if (action.content.kind === ACTION_KINDS.group) {
-        return `${action.content.actions.length} actions`;
-      }
-      return "";
-    })();
-
-    settingItem
-      .addText((text) => {
-        text
-          .setDisabled(true)
-          .setValue(contentText);
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon("arrow-up")
-          .setTooltip("上移")
-          .onClick(async () => {
-            try {
-              actionsHolder.actions = moveAction(
-                actionsHolder.actions,
-                index,
-                -1,
-              );
-              if (save) {
-                await page.plugin.saveSettings();
-              }
-              page.display();
-            } catch (error) {
-              loggerOnError(error, "Error in settings.\n(About Blank)");
-            }
-          });
-        setFakeIconToExButtonIfEmpty(button.extraSettingsEl);
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon("arrow-down")
-          .setTooltip("下移")
-          .onClick(async () => {
-            try {
-              actionsHolder.actions = moveAction(
-                actionsHolder.actions,
-                index,
-                1,
-              );
-              if (save) {
-                await page.plugin.saveSettings();
-              }
-              page.display();
-            } catch (error) {
-              loggerOnError(error, "Error in settings.\n(About Blank)");
-            }
-          });
-        setFakeIconToExButtonIfEmpty(button.extraSettingsEl);
-      })
-      .addExtraButton((button) => {
-        button
-          .setIcon("settings")
-          .setTooltip("编辑")
-          .onClick(() => {
-            try {
-              new ActionSettingsModal(
-                page.app,
-                page.plugin,
-                page,
-                nextPageIndex,
-                actionsHolder,
-                index,
-                parentsDisplay,
-              ).open();
-            } catch (error) {
-              loggerOnError(error, "Error in settings.\n(About Blank)");
-            }
-          });
-        setFakeIconToExButtonIfEmpty(button.extraSettingsEl);
-        button.extraSettingsEl.classList.add(CSS_CLASSES.iconHeightAdjuster);
-      });
-  });
 };

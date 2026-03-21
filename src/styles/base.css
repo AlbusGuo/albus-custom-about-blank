@@ -18,6 +18,10 @@
   display: var(--about-blank-empty-state-display);
 }
 
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action[hidden] {
+  display: none !important;
+}
+
 .about-blank-button-container {
   display: flex;
   flex-direction: row;
@@ -33,10 +37,10 @@
 }
 
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action-list {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action-list {
     display: flex;
     flex-wrap: wrap; 
-    justify-content: left; 
+  justify-content: center; 
     gap: 0;
     border-radius: 4px;
     box-shadow: var(--input-shadow);
@@ -46,7 +50,7 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list {
     top: 0;
 }
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item) {
     font-size: 0;
     background-color: transparent !important;
     color: var(--text-muted);
@@ -60,25 +64,25 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action {
     justify-content: center;
 }
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action:hover {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item):hover {
     background-color: var(--background-modifier-hover) !important;
     color: var(--text-normal);
     border-radius: 4px;
 }
 
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action svg {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item) svg {
     width: 16px;
     height: 16px;
     color: var(--icon-color);
 }
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action:hover svg {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item):hover svg {
     color: var(--icon-color);
 }
 
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank-default-icon {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item) .about-blank-default-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -86,68 +90,23 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action .about-blank
     height: 100%;
 }
 
-.about-blank-heatmap-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 0 20px;
-}
-
-.about-blank-heatmap-year-button {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  opacity: 0;
-  transform: scale(0.8);
-}
-
-.about-blank-heatmap-controls:hover .about-blank-heatmap-year-button {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.about-blank-heatmap-year-button:hover {
-  background-color: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.about-blank-heatmap-year-display {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-normal);
-  opacity: 0;
-  transform: scale(0.9);
-  transition: all 0.2s ease;
-}
-
-.about-blank-heatmap-controls:hover .about-blank-heatmap-year-display {
-  opacity: 1;
-  transform: scale(1);
-}
 
 
-
-.workspace-split.mod-root .empty-state-container {
+.workspace-split.mod-root .empty-state-container.about-blank-managed {
   max-height: var(--about-blank-empty-state-container-max-height);
 }
 
-.workspace-split.mod-root .empty-state-container.about-blank-search-layout,
-.workspace-split.mod-root .empty-state-container.about-blank-card-layout {
+.workspace-split.mod-root .empty-state-container.about-blank-managed.about-blank-search-layout,
+.workspace-split.mod-root .empty-state-container.about-blank-managed.about-blank-card-layout {
   max-height: none;
   height: auto;
   min-height: fit-content;
 }
 
-.workspace-split.mod-root .empty-state-action-list {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action-list {
   margin-top: var(--about-blank-empty-state-list-margin-top);
 }
 
-.workspace-split.mod-root .empty-state-action-list.is-mobile {
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action-list.is-mobile {
   margin-top: var(--about-blank-empty-state-list-margin-top-mobile);
 }

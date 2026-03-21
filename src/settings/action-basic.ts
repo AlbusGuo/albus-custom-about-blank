@@ -8,8 +8,6 @@ import {
 
 import {
   type AboutBlankSettings,
-  DEFAULT_SETTINGS,
-  settingsPropTypeCheck,
 } from "src/settings/settingTab";
 
 import isBool from "src/utils/isBool";
@@ -29,7 +27,6 @@ import {
 export const ACTION_KINDS = {
   command: "command",
   file: "file",
-  group: "group",
 } as const;
 
 export const ACTION_KINDS_NAME: {
@@ -37,7 +34,6 @@ export const ACTION_KINDS_NAME: {
 } = {
   command: "命令",
   file: "文件",
-  group: "分组",
 } as const;
 
 export const ACTION_KINDS_ICON: {
@@ -45,7 +41,6 @@ export const ACTION_KINDS_ICON: {
 } = {
   command: "terminal",
   file: "file-text",
-  group: "group",
 } as const;
 
 export interface ContentOfCommand {
@@ -60,17 +55,11 @@ export interface ContentOfFile {
   filePath: string;
 }
 
-export interface ContentOfGroup {
-  kind: typeof ACTION_KINDS.group;
-  actions: Action[];
-}
-
-export type ContentType = ContentOfCommand | ContentOfFile | ContentOfGroup;
+export type ContentType = ContentOfCommand | ContentOfFile;
 
 export const NEW_ACTION_CONTENT: {
   [ACTION_KINDS.command]: ContentOfCommand;
   [ACTION_KINDS.file]: ContentOfFile;
-  [ACTION_KINDS.group]: ContentOfGroup;
 } = {
   command: {
     kind: ACTION_KINDS.command,
@@ -81,10 +70,6 @@ export const NEW_ACTION_CONTENT: {
     kind: ACTION_KINDS.file,
     fileName: "",
     filePath: "",
-  },
-  group: {
-    kind: ACTION_KINDS.group,
-    actions: DEFAULT_SETTINGS.actions,
   },
 } as const;
 
@@ -129,8 +114,6 @@ export const actionPropTypeCheck: {
     } else if (contentValue.kind === ACTION_KINDS.file) {
       const { fileName, filePath } = contentValue;
       return typeof fileName === "string" && typeof filePath === "string";
-    } else if (contentValue.kind === ACTION_KINDS.group) {
-      return settingsPropTypeCheck.actions(contentValue.actions);
     }
     return false;
   },
@@ -144,10 +127,6 @@ export const newContentOfCommandClone = (): ContentOfCommand => {
 
 export const newContentOfFileClone = (): ContentOfFile => {
   return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.file]);
-};
-
-export const newContentOfGroupClone = (): ContentOfGroup => {
-  return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.group]);
 };
 
 export const newActionClone = (): Action => {
@@ -181,12 +160,7 @@ export const createNewAction = async (
 // =============================================================================
 
 export const allActionsBloodline = (actions: Action[]): Action[] => {
-  return actions.flatMap((action) => {
-    if (action.content.kind === ACTION_KINDS.group) {
-      return [action, ...allActionsBloodline(action.content.actions)];
-    }
-    return action;
-  });
+  return [...actions];
 };
 
 // If omit the `settings` argument, it will simply return the UUID.
@@ -205,6 +179,5 @@ export const genNewCmdId = (settings?: AboutBlankSettings): string => {
       return candidate;
     }
   }
-  console.warn("About Blank: Failed to generate a unique command ID.");
   return newActionClone().cmdId;
 };

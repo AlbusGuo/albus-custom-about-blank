@@ -31,16 +31,3 @@
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }
-
-
-.about-blank-fake-ex-button {
-  background-color: var(--interactive-normal);
-  box-shadow: var(--input-shadow);
-}
-
-
-.about-blank-fake-icon {
-  height: var(--icon-size);
-  width: var(--icon-size);
-  stroke-width: var(--icon-stroke);
-}

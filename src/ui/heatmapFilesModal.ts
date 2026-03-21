@@ -7,6 +7,10 @@ import {
 
 import type AboutBlank from "src/main";
 
+import {
+  loggerOnError,
+} from "src/commons";
+
 // =============================================================================
 
 export class HeatmapFilesModal extends Modal {
@@ -90,7 +94,7 @@ export class HeatmapFilesModal extends Modal {
           // 关闭模态窗口
           this.close();
         } catch (error) {
-          console.error('打开文件失败:', error);
+          loggerOnError(error, '打开文件失败\n(About Blank)');
         }
       });
 

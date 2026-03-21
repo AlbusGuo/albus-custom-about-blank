@@ -15,10 +15,6 @@ import {
   ConfirmDialogAsync,
 } from "src/ui/confirmDialogAsync";
 
-import {
-  ExecutionSuggester,
-} from "src/ui/executionSuggester";
-
 import isFalsyString from "src/utils/isFalsyString";
 
 import moveItemInArray from "src/utils/moveItemInArray";
@@ -79,15 +75,6 @@ export const toPracticalAction = (
     }
   }
 
-  if (action.content.kind === ACTION_KINDS.group) {
-    return groupingActions(
-      app,
-      action,
-      action.content.actions,
-      `${action.name}`, // Force to String
-    );
-  }
-
   const icon = typeof action.icon !== "string" || isFalsyString(action.icon)
     ? ""
     : action.icon;
@@ -95,11 +82,8 @@ export const toPracticalAction = (
   const callback: () => Promise<void> = (() => {
     if (action.content.kind === ACTION_KINDS.command) {
       return generateCommandCallback(app, action);
-    } else if (action.content.kind === ACTION_KINDS.file) {
-      return generateFileCallback(app, action);
-    } else {
-      return async () => {};
     }
+    return generateFileCallback(app, action);
   })();
 
   return {
@@ -203,43 +187,4 @@ const cancelExecute = async (
 ): Promise<boolean> => {
   const response = await new ConfirmDialogAsync(app, title, message).setOkCancel().openAndRespond();
   return !response.result;
-};
-
-// =============================================================================
-
-export const groupingActions = (
-  app: App,
-  groupHolder: Partial<Action>,
-  actions: Action[],
-  placeholder: string | null = null,
-): PracticalAction | void => {
-  const { icon, name, cmd, cmdId } = groupHolder;
-
-  const unqualified = isFalsyString(name);
-  if (unqualified) {
-    return;
-  }
-  const groupIcon = typeof icon !== "string" || isFalsyString(icon)
-    ? ""
-    : icon;
-
-  const practicalActions: PracticalAction[] = actions
-    .map((action) => toPracticalAction(app, action))
-    .filter((action) => action !== undefined);
-  const executions = practicalActions.map((action) => {
-    const { icon, name, callback } = action;
-    return { icon, name, callback };
-  });
-
-  const callback = (): void => {
-    new ExecutionSuggester(app, executions, placeholder).open();
-  };
-
-  return {
-    icon: groupIcon,
-    name: `${name}`, // Force to String
-    cmd: cmd === true, // Force to Boolean
-    cmdId: `${cmdId}`, // Force to String
-    callback,
-  };
 };

@@ -1,24 +1,11 @@
 import {
   type App,
-  Notice,
   SuggestModal,
 } from "obsidian";
 
-// =============================================================================
-
-/* Example:
-try {
-  const response = await new StringSuggesterAsync(this.app, items, "输入...").openAndRespond();
-  if (response.aborted) {
-    return;
-  }
-  const selectedData = response.result.value;
-} catch (error) {
-  console.error(error);
-}
-*/
-
-// =============================================================================
+import {
+  loggerOnError,
+} from "src/commons";
 
 type ValueType = string;
 
@@ -59,19 +46,6 @@ export class StringSuggesterAsync extends SuggestModal<SuggesterType> {
     aborted: true,
   } as const;
 
-  private errorHandler = (
-    error: any,
-    noticeMessage: string = "",
-  ) => {
-    if (typeof noticeMessage === "string" && 0 < noticeMessage.length) {
-      new Notice(noticeMessage);
-    }
-    const errorObj: Error = error instanceof Error
-      ? error
-      : new Error(String(error));
-    console.error(errorObj);
-  };
-
   constructor(
     app: App,
     items: SuggesterType[],
@@ -106,7 +80,7 @@ export class StringSuggesterAsync extends SuggestModal<SuggesterType> {
       // If the operation is aborted or otherwise unresolved, resolve it with `abortedResponse`.
       this.resolve(this.abortedResponse);
     } catch (error) {
-      this.errorHandler(error, "Error when closing suggester.");
+      loggerOnError(error, "Error when closing suggester.");
     }
   }
 
@@ -120,7 +94,7 @@ export class StringSuggesterAsync extends SuggestModal<SuggesterType> {
         });
       });
     } catch (error) {
-      this.errorHandler(error, "Failed to get suggestions.");
+      loggerOnError(error, "Failed to get suggestions.");
       return [];
     }
   }
@@ -129,7 +103,7 @@ export class StringSuggesterAsync extends SuggestModal<SuggesterType> {
     try {
       elem.createEl("div", { text: item.name });
     } catch (error) {
-      this.errorHandler(error, "Failed to render suggestion.");
+      loggerOnError(error, "Failed to render suggestion.");
     }
   }
 
@@ -147,7 +121,7 @@ export class StringSuggesterAsync extends SuggestModal<SuggesterType> {
       });
       this.close();
     } catch (error) {
-      this.errorHandler(error, "Failed to select suggestion.");
+      loggerOnError(error, "Failed to select suggestion.");
     }
   }
 }

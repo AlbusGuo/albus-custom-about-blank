@@ -30,7 +30,26 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-
   font-size: var(--font-ui-small, 12px);
 }
 
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 75px;
+  max-width: 110px;
+  width: auto;
+  height: auto;
+  margin: 5px;
+  padding: 8px 5px;
+  border-radius: var(--radius-m, 8px);
+  font-size: var(--font-ui-small, 12px);
+}
+
 body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-card-item:hover {
+  background-color: var(--background-modifier-hover) !important;
+}
+
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item:hover {
   background-color: var(--background-modifier-hover) !important;
 }
 
@@ -76,6 +95,19 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-
   color: var(--icon-color);
 }
 
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item .about-blank-default-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+}
+
+.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item .about-blank-default-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
 
 .about-blank-card-label {
   font-size: var(--font-ui-small, 12px);
@@ -86,6 +118,7 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-
   display: -webkit-box;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   word-break: break-all;
