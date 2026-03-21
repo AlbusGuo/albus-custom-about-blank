@@ -132,6 +132,11 @@ export class CustomStatEditorPopover {
     this.options.anchorEl = anchorEl;
     this.position();
   };
+  
+  private updateTitle = (): void => {
+    const titleEl = this.contentEl?.querySelector<HTMLElement>(".about-blank-stat-popover-title");
+    titleEl?.setText(this.draft.displayName.trim() || this.options.title);
+  };
 
   private render = (): void => {
     if (!this.contentEl) {
@@ -162,6 +167,7 @@ export class CustomStatEditorPopover {
     nameInput.value = this.draft.displayName;
     nameInput.addEventListener("input", () => {
       this.draft.displayName = nameInput.value;
+      this.updateTitle();
     });
     nameInput.addEventListener("change", () => {
       void this.commitChanges();
@@ -379,16 +385,16 @@ export class CustomStatEditorPopover {
 
   private commitChanges = async (): Promise<void> => {
     const normalized = normalizeCustomStatDefinition(this.draft) ?? createCustomStatDefinition();
-    this.draft = structuredClone(normalized);
+    const nextStat = structuredClone(normalized);
+    this.updateTitle();
     this.saveChain = this.saveChain.then(async () => {
       try {
-        await this.options.onChange(structuredClone(this.draft));
+        await this.options.onChange(nextStat);
       } catch (error) {
         loggerOnError(error, "保存自定义统计项目失败\n(About Blank)");
       }
     });
     await this.saveChain;
-    this.render();
     requestAnimationFrame(() => {
       this.position();
     });
