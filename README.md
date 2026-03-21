@@ -1,4 +1,4 @@
-# Custom About Blank
+![](https://socialify.git.ci/AlbusGuo/albus-custom-about-blank/image?font=Inter&name=1&owner=1&pattern=Transparent&theme=Light)
 
 > 本插件 fork 自 [About Blank](https://github.com/Ai-Jani/about-blank) 1.2.0, 感谢社区开源!
 
