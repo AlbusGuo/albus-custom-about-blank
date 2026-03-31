@@ -1,16 +1,6 @@
 import {
-  type App,
-} from "obsidian";
-
-import {
-  chooseKindAndContent,
-} from "src/settings/action-settings";
-
-import {
   type AboutBlankSettings,
 } from "src/settings/settingTab";
-
-import isBool from "src/utils/isBool";
 
 import isFalsyString from "src/utils/isFalsyString";
 
@@ -76,7 +66,6 @@ export const NEW_ACTION_CONTENT: {
 export interface Action {
   icon: string;
   name: string;
-  ask: boolean;
   cmd: boolean;
   cmdId: string;
   content: ContentType;
@@ -85,15 +74,9 @@ export interface Action {
 export const NEW_ACTION: Action = {
   icon: "",
   name: "",
-  ask: false,
   cmd: false,
   cmdId: "",
   content: NEW_ACTION_CONTENT[ACTION_KINDS.command],
-} as const;
-
-export const ACTION_INFO_ICON: { [key in keyof Partial<Action>]: string; } = {
-  ask: "message-circle-question",
-  cmd: "square-terminal",
 } as const;
 
 // =============================================================================
@@ -103,8 +86,7 @@ export const actionPropTypeCheck: {
 } = {
   icon: (value: unknown) => typeof value === "string",
   name: (value: unknown) => typeof value === "string",
-  ask: (value: unknown) => isBool(value),
-  cmd: (value: unknown) => isBool(value),
+  cmd: (value: unknown) => typeof value === "boolean",
   cmdId: (value: unknown) => typeof value === "string",
   content: (value: unknown) => {
     const contentValue = value as ContentType;
@@ -132,32 +114,6 @@ export const newContentOfFileClone = (): ContentOfFile => {
 export const newActionClone = (): Action => {
   return structuredClone(NEW_ACTION);
 };
-
-// If omit the `settings` argument, it will simply return the UUID.
-// If a `settings` is provided, it checks for duplicates and returns a unique ID.
-export const createNewAction = async (
-  app: App,
-  newActionName: string,
-  settings?: AboutBlankSettings,
-): Promise<Action | void> => {
-  if (isFalsyString(newActionName)) {
-    return;
-  }
-
-  const content = await chooseKindAndContent(app);
-  if (content === undefined) {
-    return;
-  }
-
-  const newAction = newActionClone();
-  newAction.name = newActionName;
-  newAction.cmdId = genNewCmdId(settings);
-  newAction.content = content;
-
-  return newAction;
-};
-
-// =============================================================================
 
 export const allActionsBloodline = (actions: Action[]): Action[] => {
   return [...actions];

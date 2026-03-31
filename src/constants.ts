@@ -10,10 +10,6 @@ export const CSS_CLASSES = {
   iconText: "about-blank-icon-text",
   actionIconText: "about-blank-action-icon-text",
   ctaIcon: "about-blank-cta-icon",
-  iconHeightAdjuster: "about-blank-icon-height-adjuster",
-  settingActionHeader: "about-blank-setting-action-header",
-  settingActionContent: "about-blank-setting-action-content",
-  settingActionSaveNotice: "about-blank-setting-action-save-notice",
 } as const;
 
 export const CSS_VARS = {

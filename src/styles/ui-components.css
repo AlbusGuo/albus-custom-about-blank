@@ -31,3 +31,35 @@
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+.about-blank-custom-icon-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.about-blank-custom-icon-mask {
+  background-color: var(--icon-color);
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-image: var(--about-blank-custom-icon-image);
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-image: var(--about-blank-custom-icon-image);
+}
+
+.about-blank-icon-suggestion-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.about-blank-icon-suggestion-preview svg,
+.about-blank-icon-suggestion-preview .about-blank-custom-icon-svg {
+  width: 16px;
+  height: 16px;
+}

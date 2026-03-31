@@ -69,6 +69,10 @@ import {
 } from "src/unsafe";
 
 import { HeatmapFilesModal } from "src/ui/heatmapFilesModal";
+
+import {
+  CustomIconManager,
+} from "src/utils/customIconManager";
 // =============================================================================
 
 type StatItem = { id: string; label: string; value: number | string };
@@ -87,6 +91,7 @@ interface ContributionItem {
 
 export default class AboutBlank extends Plugin {
   settings: AboutBlankSettings;
+  customIconManager: CustomIconManager;
 
   // 性能优化：类级别的缓存
   private statsCache: StatItem[] | null = null;
@@ -112,6 +117,7 @@ export default class AboutBlank extends Plugin {
 
   async onload() {
     try {
+      this.customIconManager = CustomIconManager.getInstance(this.app);
       await this.loadSettings();
       this.syncEmptyStateDisplayMode();
       this.app.workspace.onLayoutReady(this.backBurner);
@@ -679,15 +685,34 @@ export default class AboutBlank extends Plugin {
       card.removeAttribute('title');
 
       const iconEl = card.createEl("div", { cls: "about-blank-card-icon" });
-      if (!isFalsyString(action.icon)) {
-        setIcon(iconEl, action.icon);
-      }
+      void this.renderActionIcon(iconEl, action.icon);
 
       card.createEl("div", {
         cls: "about-blank-card-label",
         text: action.name,
       });
     });
+  };
+
+  private renderActionIcon = async (iconEl: HTMLElement, iconName: string): Promise<void> => {
+    iconEl.empty();
+    if (isFalsyString(iconName)) {
+      return;
+    }
+
+    if (this.customIconManager.isCustomIcon(iconName)) {
+      const rendered = await this.customIconManager.renderIcon(
+        iconName,
+        iconEl,
+        this.settings.shortcutIconMask,
+      );
+      if (!rendered) {
+        setIcon(iconEl, 'help-circle');
+      }
+      return;
+    }
+
+    setIcon(iconEl, iconName);
   };
 
   // 嵌入搜索框到新标签页（Float Search 原生搜索引擎）

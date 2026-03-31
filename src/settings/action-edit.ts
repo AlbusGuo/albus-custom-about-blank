@@ -11,10 +11,6 @@ import {
   type ContentOfFile,
 } from "src/settings/action-basic";
 
-import {
-  ConfirmDialogAsync,
-} from "src/ui/confirmDialogAsync";
-
 import isFalsyString from "src/utils/isFalsyString";
 
 import moveItemInArray from "src/utils/moveItemInArray";
@@ -101,40 +97,16 @@ const generateCommandCallback = (
 ): () => Promise<void> => {
   const { commandName, commandId } = action.content as ContentOfCommand;
 
-  const basicCallback = async (): Promise<void> => {
-    // Currently, `app.commands.commands.executeCommandById()` returns false
-    // if the specified ID does not exist, and true if the execution is successful.
-    const res: boolean = await (app as UnsafeApp).commands.executeCommandById(commandId);
-    if (!res) {
-      new Notice(`执行命令失败：${commandName} (${commandId})`);
+  return async (): Promise<void> => {
+    try {
+      const res: boolean = await (app as UnsafeApp).commands.executeCommandById(commandId);
+      if (!res) {
+        new Notice(`执行命令失败：${commandName} (${commandId})`);
+      }
+    } catch (error) {
+      loggerOnError(error, "命令执行失败\n(About Blank)");
     }
   };
-
-  if (action.ask === true) { // Explicitly true
-    return async (): Promise<void> => {
-      try {
-        const cancel = await cancelExecute(
-          app,
-          `${action.name}`,
-          `执行命令：${commandName} (${commandId})`,
-        );
-        if (cancel) {
-          return;
-        }
-        await basicCallback();
-      } catch (error) {
-        loggerOnError(error, "命令执行失败\n(About Blank)");
-      }
-    };
-  } else {
-    return async (): Promise<void> => {
-      try {
-        await basicCallback();
-      } catch (error) {
-        loggerOnError(error, "命令执行失败\n(About Blank)");
-      }
-    };
-  }
 };
 
 const generateFileCallback = (
@@ -153,38 +125,11 @@ const generateFileCallback = (
     await app.workspace.openLinkText("", normalizedPath);
   };
 
-  if (action.ask === true) { // Explicitly true
-    return async (): Promise<void> => {
-      try {
-        const cancel = await cancelExecute(
-          app,
-          `${action.name}`,
-          `打开文件：${fileName} (${normalizedPath})`,
-        );
-        if (cancel) {
-          return;
-        }
-        await basicCallback();
-      } catch (error) {
-        loggerOnError(error, "文件打开失败\n(About Blank)");
-      }
-    };
-  } else {
-    return async (): Promise<void> => {
-      try {
-        await basicCallback();
-      } catch (error) {
-        loggerOnError(error, "文件打开失败\n(About Blank)");
-      }
-    };
-  }
-};
-
-const cancelExecute = async (
-  app: App,
-  title: string,
-  message: string,
-): Promise<boolean> => {
-  const response = await new ConfirmDialogAsync(app, title, message).setOkCancel().openAndRespond();
-  return !response.result;
+  return async (): Promise<void> => {
+    try {
+      await basicCallback();
+    } catch (error) {
+      loggerOnError(error, "文件打开失败\n(About Blank)");
+    }
+  };
 };
