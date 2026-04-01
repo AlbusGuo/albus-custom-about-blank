@@ -34,7 +34,6 @@ import {
 } from "src/ui/editorModal";
 
 interface ActionEditorModalOptions {
-  title: string;
   iconFolder: string;
   iconMask: boolean;
   onChange: (action: Action) => Promise<void>;
@@ -108,12 +107,6 @@ export class ActionEditorModal {
 
     this.contentEl.empty();
 
-    const headerEl = this.contentEl.createDiv({ cls: "about-blank-action-editor-header" });
-    headerEl.createDiv({
-      cls: "about-blank-action-editor-title",
-      text: this.draft.name.trim() || this.options.title,
-    });
-
     const nameControlEl = this.createFormRow(this.contentEl, "名称");
     this.nameInputEl = nameControlEl.createEl("input", {
       cls: "about-blank-action-editor-input about-blank-action-editor-name-input",
@@ -122,7 +115,6 @@ export class ActionEditorModal {
     this.nameInputEl.value = this.draft.name;
     this.nameInputEl.addEventListener("input", () => {
       this.draft.name = this.nameInputEl?.value ?? "";
-      this.updateTitle();
       this.scheduleCommit();
     });
 
@@ -132,16 +124,19 @@ export class ActionEditorModal {
 
     const valueControlEl = this.createFormRow(this.contentEl, this.getValueLabel());
     this.valueInputEl = valueControlEl.createEl("input", {
-      cls: "about-blank-action-editor-input about-blank-action-editor-value-input about-blank-action-editor-picker-input",
+      cls: "about-blank-action-editor-input about-blank-action-editor-value-input",
       attr: { type: "text", placeholder: this.getValuePlaceholder() },
     });
     this.valueInputEl.value = this.getCurrentValue();
+    this.valueInputEl.classList.toggle("about-blank-action-editor-picker-input", this.draft.content.kind !== ACTION_KINDS.url);
     this.valueInputEl.addEventListener("input", () => {
       this.setCurrentValue(this.valueInputEl?.value ?? "");
       this.scheduleCommit();
     });
     this.valueInputEl.addEventListener("click", () => {
-      void this.openValuePicker();
+      if (this.draft.content.kind !== ACTION_KINDS.url) {
+        void this.openValuePicker();
+      }
     });
   };
 
@@ -174,30 +169,31 @@ export class ActionEditorModal {
     this.typeSelectEl.addClass("about-blank-action-editor-native-select");
     this.typeSelectEl.createEl("option", { value: ACTION_KINDS.command, text: "命令" });
     this.typeSelectEl.createEl("option", { value: ACTION_KINDS.file, text: "文件" });
+    this.typeSelectEl.createEl("option", { value: ACTION_KINDS.url, text: "网页" });
     this.typeSelectEl.value = this.draft.content.kind;
     this.typeSelectEl.addEventListener("change", () => {
-      const nextKind = this.typeSelectEl?.value as typeof ACTION_KINDS.command | typeof ACTION_KINDS.file;
+      const nextKind = this.typeSelectEl?.value as typeof ACTION_KINDS.command | typeof ACTION_KINDS.file | typeof ACTION_KINDS.url;
       if (nextKind === ACTION_KINDS.command) {
         this.draft.content = {
           kind: ACTION_KINDS.command,
           commandName: "",
           commandId: "",
         };
-      } else {
+      } else if (nextKind === ACTION_KINDS.file) {
         this.draft.content = {
           kind: ACTION_KINDS.file,
           fileName: "",
           filePath: "",
         };
+      } else {
+        this.draft.content = {
+          kind: ACTION_KINDS.url,
+          url: "",
+        };
       }
       this.render();
       void this.commitChanges();
     });
-  }
-
-  private updateTitle(): void {
-    const titleEl = this.contentEl?.querySelector<HTMLElement>(".about-blank-action-editor-title");
-    titleEl?.setText(this.draft.name.trim() || this.options.title);
   }
 
   private async openIconPicker(): Promise<void> {
@@ -241,17 +237,31 @@ export class ActionEditorModal {
   }
 
   private getValueLabel(): string {
-    return this.draft.content.kind === ACTION_KINDS.command ? "命令" : "文件";
+    if (this.draft.content.kind === ACTION_KINDS.command) {
+      return "命令";
+    }
+    if (this.draft.content.kind === ACTION_KINDS.file) {
+      return "文件";
+    }
+    return "网址";
   }
 
   private getValuePlaceholder(): string {
-    return this.draft.content.kind === ACTION_KINDS.command ? "命令 ID" : "文件路径";
+    if (this.draft.content.kind === ACTION_KINDS.command) {
+      return "命令 ID";
+    }
+    if (this.draft.content.kind === ACTION_KINDS.file) {
+      return "文件路径";
+    }
+    return "https://example.com";
   }
 
   private getCurrentValue(): string {
     return this.draft.content.kind === ACTION_KINDS.command
       ? this.draft.content.commandId
-      : this.draft.content.filePath;
+      : this.draft.content.kind === ACTION_KINDS.file
+        ? this.draft.content.filePath
+        : this.draft.content.url;
   }
 
   private setCurrentValue(value: string): void {
@@ -263,8 +273,13 @@ export class ActionEditorModal {
       return;
     }
 
-    this.draft.content.filePath = value;
-    this.draft.content.fileName = value;
+    if (this.draft.content.kind === ACTION_KINDS.file) {
+      this.draft.content.filePath = value;
+      this.draft.content.fileName = value;
+      return;
+    }
+
+    this.draft.content.url = value;
   }
 
   private async openValuePicker(): Promise<void> {
@@ -289,6 +304,10 @@ export class ActionEditorModal {
         this.valueInputEl.value = selected.result.value;
       }
       await this.commitChanges();
+      return;
+    }
+
+    if (this.draft.content.kind === ACTION_KINDS.url) {
       return;
     }
 

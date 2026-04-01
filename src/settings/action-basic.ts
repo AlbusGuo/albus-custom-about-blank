@@ -2,8 +2,6 @@ import {
   type AboutBlankSettings,
 } from "src/settings/settingTab";
 
-import isFalsyString from "src/utils/isFalsyString";
-
 import {
   LOOP_MAX,
 } from "src/constants";
@@ -17,6 +15,7 @@ import {
 export const ACTION_KINDS = {
   command: "command",
   file: "file",
+  url: "url",
 } as const;
 
 export const ACTION_KINDS_NAME: {
@@ -24,6 +23,7 @@ export const ACTION_KINDS_NAME: {
 } = {
   command: "命令",
   file: "文件",
+  url: "网页",
 } as const;
 
 export const ACTION_KINDS_ICON: {
@@ -31,6 +31,7 @@ export const ACTION_KINDS_ICON: {
 } = {
   command: "terminal",
   file: "file-text",
+  url: "globe",
 } as const;
 
 export interface ContentOfCommand {
@@ -45,11 +46,17 @@ export interface ContentOfFile {
   filePath: string;
 }
 
-export type ContentType = ContentOfCommand | ContentOfFile;
+export interface ContentOfUrl {
+  kind: typeof ACTION_KINDS.url;
+  url: string;
+}
+
+export type ContentType = ContentOfCommand | ContentOfFile | ContentOfUrl;
 
 export const NEW_ACTION_CONTENT: {
   [ACTION_KINDS.command]: ContentOfCommand;
   [ACTION_KINDS.file]: ContentOfFile;
+  [ACTION_KINDS.url]: ContentOfUrl;
 } = {
   command: {
     kind: ACTION_KINDS.command,
@@ -60,6 +67,10 @@ export const NEW_ACTION_CONTENT: {
     kind: ACTION_KINDS.file,
     fileName: "",
     filePath: "",
+  },
+  url: {
+    kind: ACTION_KINDS.url,
+    url: "",
   },
 } as const;
 
@@ -96,6 +107,8 @@ export const actionPropTypeCheck: {
     } else if (contentValue.kind === ACTION_KINDS.file) {
       const { fileName, filePath } = contentValue;
       return typeof fileName === "string" && typeof filePath === "string";
+    } else if (contentValue.kind === ACTION_KINDS.url) {
+      return typeof contentValue.url === "string";
     }
     return false;
   },
@@ -103,20 +116,8 @@ export const actionPropTypeCheck: {
 
 // =============================================================================
 
-export const newContentOfCommandClone = (): ContentOfCommand => {
-  return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.command]);
-};
-
-export const newContentOfFileClone = (): ContentOfFile => {
-  return structuredClone(NEW_ACTION_CONTENT[ACTION_KINDS.file]);
-};
-
 export const newActionClone = (): Action => {
   return structuredClone(NEW_ACTION);
-};
-
-export const allActionsBloodline = (actions: Action[]): Action[] => {
-  return [...actions];
 };
 
 // If omit the `settings` argument, it will simply return the UUID.
@@ -127,8 +128,7 @@ export const genNewCmdId = (settings?: AboutBlankSettings): string => {
   }
 
   // Unique ID
-  const allActions = allActionsBloodline(settings.actions);
-  const currentCmdIds = allActions.map((action) => action.cmdId);
+  const currentCmdIds = settings.actions.map((action) => action.cmdId);
   for (let i = 0; i < LOOP_MAX; i++) {
     const candidate = crypto.randomUUID();
     if (!currentCmdIds.includes(candidate)) {

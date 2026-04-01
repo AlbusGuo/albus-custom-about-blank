@@ -9,6 +9,7 @@ import {
   ACTION_KINDS,
   type ContentOfCommand,
   type ContentOfFile,
+  type ContentOfUrl,
 } from "src/settings/action-basic";
 
 import isFalsyString from "src/utils/isFalsyString";
@@ -69,6 +70,8 @@ export const toPracticalAction = (
     if (undefinedFile) {
       return;
     }
+  } else if (isFalsyString(action.content.url)) {
+    return;
   }
 
   const icon = typeof action.icon !== "string" || isFalsyString(action.icon)
@@ -78,6 +81,9 @@ export const toPracticalAction = (
   const callback: () => Promise<void> = (() => {
     if (action.content.kind === ACTION_KINDS.command) {
       return generateCommandCallback(app, action);
+    }
+    if (action.content.kind === ACTION_KINDS.url) {
+      return generateUrlCallback(action);
     }
     return generateFileCallback(app, action);
   })();
@@ -130,6 +136,21 @@ const generateFileCallback = (
       await basicCallback();
     } catch (error) {
       loggerOnError(error, "文件打开失败\n(About Blank)");
+    }
+  };
+};
+
+const generateUrlCallback = (
+  action: Action,
+): () => Promise<void> => {
+  const { url } = action.content as ContentOfUrl;
+
+  return async (): Promise<void> => {
+    try {
+      const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+      window.open(normalizedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      loggerOnError(error, "网页打开失败\n(About Blank)");
     }
   };
 };

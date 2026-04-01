@@ -2180,6 +2180,7 @@ export default class AboutBlank extends Plugin {
       
       // 创建一个图片预览选择器
       const modal = new Modal(this.app);
+      modal.modalEl.addClass('about-blank-image-modal');
       modal.contentEl.createEl('h3', { text: '选择Logo图片' });
       
       // 添加搜索框

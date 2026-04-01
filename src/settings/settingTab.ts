@@ -5,7 +5,6 @@ import {
   Setting,
   SettingGroup,
   setIcon,
-  TFile,
   type TextComponent,
 } from "obsidian";
 
@@ -21,10 +20,6 @@ import {
 } from "src/settings/hideDefault";
 
 import {
-  StringSuggesterAsync,
-} from "src/ui/stringSuggesterAsync";
-
-import {
   FolderSuggester,
 } from "src/ui/folderSuggester";
 
@@ -35,6 +30,10 @@ import {
 import {
   ActionEditorModal,
 } from "src/settings/actionEditorModal";
+
+import {
+  CustomStatEditorModal,
+} from "src/settings/customStatEditorModal";
 
 import {
   countCustomStatFilterConditions,
@@ -53,7 +52,6 @@ import {
   type CustomStatFilterCondition,
   type CustomStatFilterConditionType,
   type CustomStatFilterGroup,
-  type CustomStatFilterNode,
   type CustomStatFilterOperator,
 } from "src/utils/customStatFilters";
 
@@ -70,16 +68,12 @@ import {
 } from "src/types";
 
 import {
-  type UnsafeApp,
-} from "src/unsafe";
-
-import {
   CustomIconManager,
 } from "src/utils/customIconManager";
 
 import {
-  EditorModal,
-} from "src/ui/editorModal";
+  ConfirmModal,
+} from "src/ui/confirmModal";
 
 // =============================================================================
 
@@ -184,442 +178,6 @@ const isCustomStat = (value: unknown): value is CustomStat => {
   return isCustomStatDefinition(value);
 };
 
-interface InlineCustomStatEditorModalOptions {
-  title: string;
-  onChange: (stat: CustomStatDefinition) => Promise<void>;
-  onClose?: () => void;
-}
-
-class CustomStatEditorModal {
-  private readonly app: App;
-  private readonly options: InlineCustomStatEditorModalOptions;
-  private draft: CustomStatDefinition;
-  private modal: EditorModal | null = null;
-  private contentEl: HTMLDivElement | null = null;
-  private bodyEl: HTMLDivElement | null = null;
-  private saveChain: Promise<void> = Promise.resolve();
-
-  constructor(
-    app: App,
-    initialStat: CustomStatDefinition,
-    options: InlineCustomStatEditorModalOptions,
-  ) {
-    this.app = app;
-    this.options = options;
-    this.draft = structuredClone(isCustomStatDefinition(initialStat) ? initialStat : createCustomStatDefinition());
-  }
-
-  open = (): void => {
-    if (this.modal) {
-      return;
-    }
-
-    this.modal = new EditorModal(this.app, {
-      modalClass: "about-blank-stat-editor-modal-shell",
-      contentClass: "about-blank-stat-editor-modal",
-      onOpen: (contentEl) => {
-        this.contentEl = contentEl as HTMLDivElement;
-        this.render();
-      },
-      onClose: () => {
-        this.contentEl = null;
-        this.bodyEl = null;
-        this.modal = null;
-        this.options.onClose?.();
-      },
-    });
-    this.modal.open();
-  };
-
-  close = (): void => {
-    this.modal?.close();
-  };
-
-  private render = (): void => {
-    if (!this.contentEl) {
-      return;
-    }
-
-    this.contentEl.empty();
-
-    const headerEl = this.contentEl.createDiv({ cls: "about-blank-stat-editor-header" });
-    const titleEl = headerEl.createDiv({ cls: "about-blank-stat-editor-title" });
-    titleEl.setText(this.draft.displayName.trim() || this.options.title);
-
-    const metaRowEl = this.contentEl.createDiv({ cls: "about-blank-stat-editor-meta-row" });
-    const nameControlEl = this.createInlineField(metaRowEl, "名称");
-
-    const nameInput = nameControlEl.createEl("input", {
-      cls: "about-blank-stat-editor-input about-blank-stat-editor-name-input",
-      attr: { type: "text", placeholder: "显示名称" },
-    });
-    nameInput.value = this.draft.displayName;
-    nameInput.addEventListener("input", () => {
-      this.draft.displayName = nameInput.value;
-      titleEl.setText(this.draft.displayName.trim() || this.options.title);
-    });
-    nameInput.addEventListener("change", () => {
-      void this.commitChanges();
-    });
-
-    const conjunctionControlEl = this.createInlineField(metaRowEl, "根组");
-    const rootConjunctionSelect = conjunctionControlEl.createEl("select", { cls: "about-blank-stat-editor-select" });
-    rootConjunctionSelect.addClass("dropdown");
-    this.appendConjunctionOptions(rootConjunctionSelect, this.draft.filters.conjunction);
-    rootConjunctionSelect.addEventListener("change", () => {
-      this.draft.filters.conjunction = rootConjunctionSelect.value as typeof this.draft.filters.conjunction;
-      void this.commitChanges();
-      this.renderBody();
-    });
-
-    this.bodyEl = this.contentEl.createDiv({ cls: "about-blank-stat-editor-body" });
-    this.renderBody();
-  };
-
-  private renderBody = (): void => {
-    if (!this.bodyEl) {
-      return;
-    }
-
-    const scrollTop = this.bodyEl.scrollTop;
-    this.bodyEl.empty();
-    this.renderGroup(this.draft.filters, this.bodyEl, true, null, 0, 0);
-    this.bodyEl.scrollTop = scrollTop;
-  };
-
-  private createInlineField(parentEl: HTMLElement, label: string): HTMLElement {
-    const fieldEl = parentEl.createDiv({ cls: "about-blank-stat-editor-inline-field" });
-    fieldEl.createDiv({ cls: "about-blank-stat-editor-label", text: label });
-    return fieldEl.createDiv({ cls: "about-blank-stat-editor-control" });
-  }
-
-  private renderGroup(
-    group: CustomStatFilterGroup,
-    parentEl: HTMLElement,
-    isRoot: boolean,
-    parentGroup: CustomStatFilterGroup | null,
-    depth: number,
-    indexInParent: number,
-  ): void {
-    if (isRoot) {
-      const rootEl = parentEl.createDiv({ cls: "about-blank-stat-editor-root-group" });
-      const nodesEl = rootEl.createDiv({ cls: "about-blank-stat-editor-group-nodes" });
-      group.conditions.forEach((node, index) => {
-        if (node.kind === CUSTOM_STAT_FILTER_NODE_KINDS.group) {
-          this.renderGroup(node, nodesEl, false, group, depth + 1, index);
-          return;
-        }
-        this.renderConditionRow(node, nodesEl, group, index);
-      });
-
-      const actionsEl = rootEl.createDiv({ cls: "about-blank-stat-editor-actions" });
-      this.createTextButton(actionsEl, "添加条件", () => {
-        group.conditions.push(createCustomStatFilterCondition());
-        this.renderBody();
-        void this.commitChanges();
-      }, "plus");
-      this.createTextButton(actionsEl, "添加条件组", () => {
-        group.conditions.push(createCustomStatFilterGroup());
-        this.renderBody();
-        void this.commitChanges();
-      }, "chevrons-right-left");
-      return;
-    }
-
-    const wrapperEl = parentEl.createDiv({ cls: "about-blank-stat-editor-node about-blank-stat-editor-group-node" });
-    wrapperEl.createDiv({
-      cls: "about-blank-stat-editor-prefix",
-      text: this.getJoinerLabel(parentGroup, indexInParent),
-    });
-
-    const groupEl = wrapperEl.createDiv({ cls: "about-blank-stat-editor-group" });
-    groupEl.dataset.depth = String(depth);
-
-    const groupHeaderEl = groupEl.createDiv({ cls: "about-blank-stat-editor-group-header" });
-    const groupConjunctionSelect = groupHeaderEl.createEl("select", { cls: "about-blank-stat-editor-select" });
-    groupConjunctionSelect.addClass("dropdown");
-    this.appendConjunctionOptions(groupConjunctionSelect, group.conjunction);
-    groupConjunctionSelect.addEventListener("change", () => {
-      group.conjunction = groupConjunctionSelect.value as typeof group.conjunction;
-      void this.commitChanges();
-      this.renderBody();
-    });
-
-    if (parentGroup) {
-      const removeGroupButton = this.createIconButton(groupHeaderEl, "trash", "删除条件组", () => {
-        if (parentGroup.conditions.length <= 1) {
-          return;
-        }
-        parentGroup.conditions = parentGroup.conditions.filter((node) => node.id !== group.id);
-        this.renderBody();
-        void this.commitChanges();
-      });
-      removeGroupButton.addClass("is-danger");
-      removeGroupButton.toggleClass("is-disabled", parentGroup.conditions.length <= 1);
-      removeGroupButton.disabled = parentGroup.conditions.length <= 1;
-    }
-
-    const nodesEl = groupEl.createDiv({ cls: "about-blank-stat-editor-group-nodes" });
-    group.conditions.forEach((node, index) => {
-      if (node.kind === CUSTOM_STAT_FILTER_NODE_KINDS.group) {
-        this.renderGroup(node, nodesEl, false, group, depth + 1, index);
-        return;
-      }
-      this.renderConditionRow(node, nodesEl, group, index);
-    });
-
-    const actionsEl = groupEl.createDiv({ cls: "about-blank-stat-editor-actions" });
-    this.createTextButton(actionsEl, "添加条件", () => {
-      group.conditions.push(createCustomStatFilterCondition());
-      this.renderBody();
-      void this.commitChanges();
-    }, "plus");
-    this.createTextButton(actionsEl, "添加条件组", () => {
-      group.conditions.push(createCustomStatFilterGroup());
-      this.renderBody();
-      void this.commitChanges();
-    }, "chevrons-right-left");
-  }
-
-  private renderConditionRow(
-    condition: CustomStatFilterCondition,
-    parentEl: HTMLElement,
-    group: CustomStatFilterGroup,
-    indexInGroup: number,
-  ): void {
-    const wrapperEl = parentEl.createDiv({ cls: "about-blank-stat-editor-node about-blank-stat-editor-condition-node" });
-    wrapperEl.createDiv({
-      cls: "about-blank-stat-editor-prefix",
-      text: this.getJoinerLabel(group, indexInGroup),
-    });
-
-    const rowEl = wrapperEl.createDiv({ cls: "about-blank-stat-editor-row" });
-    const isValueOptional = isOperatorValueOptional(condition.operator);
-    rowEl.toggleClass("is-frontmatter", condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter);
-    rowEl.toggleClass("is-value-optional", isValueOptional);
-
-    const typeSelect = rowEl.createEl("select", { cls: "about-blank-stat-editor-select" });
-    typeSelect.addClass("dropdown");
-    this.appendConditionTypeOptions(typeSelect, condition.type);
-    typeSelect.addEventListener("change", () => {
-      const nextType = typeSelect.value as CustomStatFilterConditionType;
-      condition.type = nextType;
-      condition.operator = getDefaultOperatorForConditionType(nextType);
-      condition.value = "";
-      if (nextType !== CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter) {
-        condition.key = "";
-      }
-      this.renderBody();
-      void this.commitChanges();
-    });
-
-    if (condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter) {
-      const keyInput = rowEl.createEl("input", {
-        cls: "about-blank-stat-editor-input about-blank-stat-editor-input-key",
-        attr: { type: "text", placeholder: "字段" },
-      });
-      keyInput.value = condition.key;
-      keyInput.addEventListener("input", () => {
-        condition.key = keyInput.value;
-      });
-      keyInput.addEventListener("change", () => {
-        void this.commitChanges();
-      });
-    }
-
-    const operatorSelect = rowEl.createEl("select", { cls: "about-blank-stat-editor-select" });
-    operatorSelect.addClass("dropdown");
-    const operators = getOperatorsForConditionType(condition.type);
-    operators.forEach((operator) => {
-      operatorSelect.createEl("option", {
-        value: operator,
-        text: this.getOperatorLabel(operator),
-      });
-    });
-    operatorSelect.value = operators.includes(condition.operator)
-      ? condition.operator
-      : getDefaultOperatorForConditionType(condition.type);
-    operatorSelect.addEventListener("change", () => {
-      condition.operator = operatorSelect.value as CustomStatFilterOperator;
-      if (isOperatorValueOptional(condition.operator)) {
-        condition.value = "";
-      }
-      this.renderBody();
-      void this.commitChanges();
-    });
-
-    if (!isValueOptional) {
-      const valueInput = rowEl.createEl("input", {
-        cls: "about-blank-stat-editor-input about-blank-stat-editor-input-value",
-        attr: {
-          type: this.getValueInputType(condition),
-          placeholder: this.getValuePlaceholder(condition),
-        },
-      });
-      valueInput.value = condition.value;
-      valueInput.addEventListener("input", () => {
-        condition.value = valueInput.value;
-      });
-      valueInput.addEventListener("change", () => {
-        void this.commitChanges();
-      });
-
-      if (condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.folder) {
-        new FolderSuggester(this.app, valueInput);
-      } else if (condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.fileType) {
-        new ExtensionSuggester(this.app, valueInput);
-      }
-    }
-
-    const removeButton = this.createIconButton(rowEl, "trash", "删除条件", () => {
-      if (group.conditions.length <= 1) {
-        return;
-      }
-      group.conditions = group.conditions.filter((node) => node.id !== condition.id);
-      this.renderBody();
-      void this.commitChanges();
-    });
-    removeButton.addClass("is-danger");
-    removeButton.toggleClass("is-disabled", group.conditions.length <= 1);
-    removeButton.disabled = group.conditions.length <= 1;
-  }
-
-  private async commitChanges(): Promise<void> {
-    const nextStat = structuredClone(this.draft);
-    this.saveChain = this.saveChain.then(async () => {
-      try {
-        await this.options.onChange(nextStat);
-      } catch (error) {
-        loggerOnError(error, "保存自定义统计项目失败\n(About Blank)");
-      }
-    });
-    await this.saveChain;
-  }
-
-  private appendConjunctionOptions(selectEl: HTMLSelectElement, currentValue: string): void {
-    selectEl.createEl("option", { value: CUSTOM_STAT_FILTER_CONJUNCTIONS.and, text: "满足全部" });
-    selectEl.createEl("option", { value: CUSTOM_STAT_FILTER_CONJUNCTIONS.or, text: "满足任一" });
-    selectEl.value = currentValue;
-  }
-
-  private appendConditionTypeOptions(selectEl: HTMLSelectElement, currentValue: string): void {
-    [
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.folder, "文件夹"],
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.fileType, "文件类型"],
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.fileName, "文件名"],
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.tag, "标签"],
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.createdAt, "创建日期"],
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.modifiedAt, "修改日期"],
-      [CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter, "Frontmatter"],
-    ].forEach(([value, label]) => {
-      selectEl.createEl("option", { value, text: label });
-    });
-    selectEl.value = currentValue;
-  }
-
-  private createIconButton(parentEl: HTMLElement, icon: string, label: string, onClick: () => void): HTMLButtonElement {
-    const button = parentEl.createEl("button", {
-      cls: "about-blank-stat-editor-icon-button",
-      attr: { type: "button", "aria-label": label, title: label },
-    });
-    setIcon(button, icon);
-    button.addEventListener("click", onClick);
-    return button;
-  }
-
-  private createTextButton(parentEl: HTMLElement, label: string, onClick: () => void, icon?: string): HTMLButtonElement {
-    const button = parentEl.createEl("button", {
-      cls: "about-blank-stat-editor-text-button",
-      attr: { type: "button" },
-    });
-    if (icon) {
-      const iconEl = button.createSpan({ cls: "about-blank-stat-editor-text-button-icon" });
-      setIcon(iconEl, icon);
-    }
-    button.createSpan({ text: label });
-    button.addEventListener("click", onClick);
-    return button;
-  }
-
-  private getJoinerLabel(group: CustomStatFilterGroup | null, index: number): string {
-    if (index === 0 || !group) {
-      return "条件";
-    }
-    return group.conjunction === CUSTOM_STAT_FILTER_CONJUNCTIONS.and ? "并且" : "或者";
-  }
-
-  private getValueInputType(condition: CustomStatFilterCondition): string {
-    if (condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.createdAt || condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.modifiedAt) {
-      return "date";
-    }
-    if (
-      condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter
-      && (
-        condition.operator === CUSTOM_STAT_FILTER_OPERATORS.before
-        || condition.operator === CUSTOM_STAT_FILTER_OPERATORS.onOrBefore
-        || condition.operator === CUSTOM_STAT_FILTER_OPERATORS.after
-        || condition.operator === CUSTOM_STAT_FILTER_OPERATORS.onOrAfter
-      )
-    ) {
-      return "date";
-    }
-    return "text";
-  }
-
-  private getValuePlaceholder(condition: CustomStatFilterCondition): string {
-    switch (condition.type) {
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.folder:
-        return "文件夹路径";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.fileType:
-        return "例如 md";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.tag:
-        return "标签";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.fileName:
-        return "文件名";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.createdAt:
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.modifiedAt:
-        return "日期";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter:
-        return "比较值";
-      default:
-        return "值";
-    }
-  }
-
-  private getOperatorLabel(operator: CustomStatFilterOperator): string {
-    switch (operator) {
-      case CUSTOM_STAT_FILTER_OPERATORS.is:
-        return "等于";
-      case CUSTOM_STAT_FILTER_OPERATORS.isNot:
-        return "不等于";
-      case CUSTOM_STAT_FILTER_OPERATORS.contains:
-        return "包含";
-      case CUSTOM_STAT_FILTER_OPERATORS.notContains:
-        return "不包含";
-      case CUSTOM_STAT_FILTER_OPERATORS.startsWith:
-        return "开头是";
-      case CUSTOM_STAT_FILTER_OPERATORS.endsWith:
-        return "结尾是";
-      case CUSTOM_STAT_FILTER_OPERATORS.regexMatch:
-        return "正则匹配";
-      case CUSTOM_STAT_FILTER_OPERATORS.before:
-        return "早于";
-      case CUSTOM_STAT_FILTER_OPERATORS.onOrBefore:
-        return "早于或等于";
-      case CUSTOM_STAT_FILTER_OPERATORS.after:
-        return "晚于";
-      case CUSTOM_STAT_FILTER_OPERATORS.onOrAfter:
-        return "晚于或等于";
-      case CUSTOM_STAT_FILTER_OPERATORS.exists:
-        return "存在";
-      case CUSTOM_STAT_FILTER_OPERATORS.notExists:
-        return "不存在";
-      default:
-        return operator;
-    }
-  }
-}
-
 // =============================================================================
 
 export const settingsPropTypeCheck: {
@@ -688,7 +246,6 @@ export const defaultSettingsClone = (): AboutBlankSettings => {
 export class AboutBlankSettingTab extends PluginSettingTab {
   plugin: AboutBlank;
   icon: string = 'app-window';
-  newActionName: string = "";
   private draggedIndex: number | null = null;
   private customStatEditorModal: CustomStatEditorModal | null = null;
   private customStatEditorIndex: number | null = null;
@@ -910,13 +467,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
       if (this.plugin.settings.actions.length === 0) {
         actionsGroup.addSetting((emptySetting) => {
-          emptySetting.settingEl.addClass('about-blank-action-empty-setting');
-          const emptyStateEl = emptySetting.infoEl.createDiv({ cls: 'about-blank-action-empty' });
-          emptyStateEl.createEl('p', { text: '还没有添加任何快捷方式' });
-          emptyStateEl.createEl('p', {
-            text: '点击下方按钮开始创建快捷方式',
-            cls: 'setting-item-description',
-          });
+          emptySetting
+            .setName('还没有添加任何快捷方式')
+            .setDesc('点击下方按钮开始创建');
         });
       } else {
         this.plugin.settings.actions.forEach((action, index) => {
@@ -1275,6 +828,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
               button.setIcon("trash")
                 .setTooltip("删除")
                 .onClick(async () => {
+                  const confirmed = await ConfirmModal.confirm(this.app, {
+                    title: "删除统计项目",
+                    message: `确定要删除统计项目「${stat.displayName.trim() || `统计项目 ${index + 1}`}」吗？`,
+                    confirmText: "删除",
+                    cancelText: "取消",
+                    danger: true,
+                  });
+                  if (!confirmed) {
+                    return;
+                  }
                   const previousEditorIndex = this.customStatEditorIndex;
                   this.plugin.settings.customStats.splice(index, 1);
                   if (previousEditorIndex === index) {
@@ -1313,68 +876,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
   private getCustomStatSummary = (stat: CustomStat): string => {
     const conjunctionText = stat.filters.conjunction === CUSTOM_STAT_FILTER_CONJUNCTIONS.and
-      ? "根组: 全部满足"
-      : "根组: 任一满足";
-    const previewText = this.getCustomStatPreview(stat.filters)
-      .filter(Boolean)
-      .join(" · ");
+      ? "根组条件: 全部满足"
+      : "根组条件: 任一满足";
     const countText = `${countCustomStatFilterConditions(stat.filters)} 条条件`;
-    return [conjunctionText, countText, previewText].filter(Boolean).join(" · ");
-  };
-
-  private getCustomStatPreview = (group: CustomStatFilterGroup): string[] => {
-    return group.conditions
-      .slice(0, 2)
-      .map((node) => this.getCustomStatNodeSummary(node))
-      .filter(Boolean);
-  };
-
-  private getCustomStatNodeSummary = (node: CustomStatFilterNode): string => {
-    if (node.kind === CUSTOM_STAT_FILTER_NODE_KINDS.condition) {
-      return this.getCustomStatConditionSummary(node);
-    }
-
-    const preview = this.getCustomStatPreview(node).join(" · ");
-    const prefix = node.conjunction === CUSTOM_STAT_FILTER_CONJUNCTIONS.and ? "组(全部)" : "组(任一)";
-    return preview ? `${prefix}: ${preview}` : prefix;
-  };
-
-  private getCustomStatConditionLabel = (type: CustomStatFilterConditionType): string => {
-    switch (type) {
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.folder:
-        return "文件夹";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.fileType:
-        return "文件类型";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.fileName:
-        return "文件名";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.tag:
-        return "标签";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.createdAt:
-        return "创建日期";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.modifiedAt:
-        return "修改日期";
-      case CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter:
-        return "Frontmatter";
-      default:
-        return type;
-    }
-  };
-
-  private getCustomStatConditionSummary = (condition: CustomStatFilterCondition): string => {
-    const typeLabel = condition.type === CUSTOM_STAT_FILTER_CONDITION_TYPES.frontmatter
-      ? `Frontmatter.${condition.key || "字段"}`
-      : this.getCustomStatConditionLabel(condition.type);
-    const operatorLabel = this.getCustomStatOperatorLabel(condition.operator);
-    if (isOperatorValueOptional(condition.operator)) {
-      return `${typeLabel} ${operatorLabel}`;
-    }
-    return `${typeLabel} ${operatorLabel} ${condition.value || "未设置"}`;
+    return [conjunctionText, countText].join(" · ");
   };
 
   private openCustomStatEditor = (index: number): void => {
     const stat = this.plugin.settings.customStats[index];
-    const anchorEl = this.customStatRowElements.get(index);
-    if (!stat || !anchorEl) {
+    const rowEl = this.customStatRowElements.get(index);
+    if (!stat || !rowEl) {
       return;
     }
 
@@ -1386,7 +897,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     this.closeCustomStatEditor(false);
     this.customStatEditorIndex = index;
     this.customStatEditorModal = new CustomStatEditorModal(this.app, stat, {
-      title: stat.displayName.trim() || `统计项目 ${index + 1}`,
       onChange: async (nextStat: CustomStatDefinition) => {
         if (!this.plugin.settings.customStats[index]) {
           return;
@@ -1520,6 +1030,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         .setIcon('trash')
         .setTooltip('删除快捷方式')
         .onClick(async () => {
+          const confirmed = await ConfirmModal.confirm(this.app, {
+            title: '删除快捷方式',
+            message: `确定要删除快捷方式「${action.name.trim() || `快捷方式 ${index + 1}`}」吗？`,
+            confirmText: '删除',
+            cancelText: '取消',
+            danger: true,
+          });
+          if (!confirmed) {
+            return;
+          }
           const previousEditorIndex = this.actionEditorIndex;
           this.plugin.settings.actions.splice(index, 1);
           if (previousEditorIndex === index) {
@@ -1573,16 +1093,20 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   }
 
   private getActionSummary(action: Action): string {
-    const target = action.content.kind === ACTION_KINDS.command
-      ? action.content.commandName || action.content.commandId || '未设置命令'
-      : action.content.filePath || '未设置文件';
-    return `${action.content.kind === ACTION_KINDS.command ? '命令' : '文件'} · ${target}`;
+    if (action.content.kind === ACTION_KINDS.command) {
+      const target = action.content.commandName || action.content.commandId || '未设置命令';
+      return `命令 · ${target}`;
+    }
+    if (action.content.kind === ACTION_KINDS.file) {
+      return `文件 · ${action.content.filePath || '未设置文件'}`;
+    }
+    return `网页 · ${action.content.url || '未设置网址'}`;
   }
 
   private openActionEditor(index: number): void {
     const action = this.plugin.settings.actions[index];
-    const anchorEl = this.actionRowElements.get(index);
-    if (!action || !anchorEl) {
+    const rowEl = this.actionRowElements.get(index);
+    if (!action || !rowEl) {
       return;
     }
 
@@ -1594,7 +1118,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     this.closeActionEditor(false);
     this.actionEditorIndex = index;
     this.actionEditorModal = new ActionEditorModal(this.app, action, {
-      title: action.name.trim() || `快捷方式 ${index + 1}`,
       iconFolder: this.plugin.settings.shortcutIconFolder,
       iconMask: this.plugin.settings.shortcutIconMask,
       onChange: async (nextAction) => {
@@ -1784,7 +1307,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           .setDesc("选择统计文件日期的数据来源")
           .addDropdown((dropdown) => {
             dropdown
-              .addOption("frontmatter", "Frontmatter 字段")
+              .addOption("frontmatter", "笔记属性")
               .addOption("fileCreation", "文件创建时间")
               .setValue(this.plugin.settings.heatmapDataSource)
               .onChange(async (value: "frontmatter" | "fileCreation") => {
@@ -1802,8 +1325,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       if (this.plugin.settings.heatmapDataSource === "frontmatter") {
         heatmapGroup.addSetting((frontmatterFieldSetting) => {
           frontmatterFieldSetting
-            .setName("Frontmatter 字段名")
-            .setDesc("设置用于统计日期的 Frontmatter 字段名称")
+            .setName("笔记属性名称")
+            .setDesc("设置用于统计日期的笔记属性名称")
             .addText((text) => {
               text
                 .setPlaceholder("例如: created")

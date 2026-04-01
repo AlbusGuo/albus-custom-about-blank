@@ -81,29 +81,20 @@
   overflow-wrap: anywhere;
 }
 
+.about-blank-stat-setting .setting-item-name,
+.about-blank-stat-setting .setting-item-description {
+  display: -webkit-box;
+  line-clamp: 1;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .about-blank-stat-setting .setting-item-control {
   flex: none;
   flex-wrap: nowrap;
   margin-left: auto;
-}
-
-.about-blank-action-empty {
-  text-align: center;
-  padding: 2em 1.25em;
-  color: var(--text-muted);
-  background: var(--background-secondary);
-  border-radius: var(--radius-m);
-  margin: 1em 0;
-}
-
-.about-blank-action-empty p {
-  margin: 8px 0;
-  font-size: 14px;
-}
-
-.about-blank-action-empty .setting-item-description {
-  font-size: 12px;
-  opacity: 0.7;
 }
 
 .about-blank-item-add-container {
@@ -240,25 +231,6 @@
   align-items: center;
   column-gap: 8px;
   min-width: 0;
-}
-
-.about-blank-action-editor-header,
-.about-blank-stat-editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.about-blank-action-editor-title,
-.about-blank-stat-editor-title {
-  min-width: 0;
-  font-size: var(--font-ui-small);
-  font-weight: 600;
-  color: var(--text-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .about-blank-stat-editor-icon-button {
@@ -425,9 +397,35 @@
 
 .about-blank-action-editor-native-select,
 .about-blank-stat-editor-select.dropdown {
-  width: fit-content;
-  min-width: 0;
+  width: auto;
+  min-width: max-content;
   max-width: 100%;
+}
+
+.about-blank-stat-editor-select.dropdown {
+  flex: 0 0 auto;
+}
+
+.about-blank-confirm-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-blank-confirm-modal h3 {
+  margin: 0;
+}
+
+.about-blank-confirm-modal-message {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.about-blank-confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .about-blank-action-editor-icon-field {
@@ -441,13 +439,13 @@
 }
 
 .about-blank-stat-editor-input-key {
-  flex: 0 0 110px;
-  width: 110px;
+  flex: 1 1 96px;
+  width: 96px;
   min-width: 0;
 }
 
 .about-blank-stat-editor-input-value {
-  flex: 1 1 auto;
+  flex: 1 1 160px;
   width: 100%;
   min-width: 0;
 }
