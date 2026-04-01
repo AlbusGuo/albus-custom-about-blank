@@ -102,11 +102,13 @@
   gap: 0.75em;
   width: 100%;
   margin: 0;
-  padding-top: 0.75em;
+  padding-top: 0;
 }
 
 .about-blank-item-add-setting {
-  padding-top: 0;
+  padding: 0;
+  border-top: none;
+  min-height: auto;
 }
 
 .about-blank-item-add-setting .setting-item-info {
@@ -116,6 +118,7 @@
 .about-blank-item-add-setting .setting-item-control {
   width: 100%;
   margin-left: 0;
+  padding-top: 0;
 }
 
 .about-blank-item-add-btn {

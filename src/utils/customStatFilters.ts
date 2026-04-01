@@ -420,7 +420,7 @@ export const createCustomStatFilterGroup = (): CustomStatFilterGroup => {
     kind: CUSTOM_STAT_FILTER_NODE_KINDS.group,
     id: createGroupId(),
     conjunction: CUSTOM_STAT_FILTER_CONJUNCTIONS.and,
-    conditions: [createCustomStatFilterCondition()],
+    conditions: [],
   };
 };
 
@@ -637,7 +637,7 @@ export const normalizeCustomStatFilterGroup = (value: unknown): CustomStatFilter
     conjunction: isConjunction(value.conjunction)
       ? value.conjunction
       : CUSTOM_STAT_FILTER_CONJUNCTIONS.and,
-    conditions: conditions.length ? conditions : [createCustomStatFilterCondition()],
+    conditions,
   };
 };
 

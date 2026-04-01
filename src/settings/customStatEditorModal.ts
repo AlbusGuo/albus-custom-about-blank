@@ -195,16 +195,11 @@ export class CustomStatEditorModal {
 
     if (parentGroup) {
       const removeGroupButton = this.createIconButton(groupHeaderEl, "trash", "删除条件组", () => {
-        if (parentGroup.conditions.length <= 1) {
-          return;
-        }
         parentGroup.conditions = parentGroup.conditions.filter((node) => node.id !== group.id);
         this.renderBody();
         void this.commitChanges();
       });
       removeGroupButton.addClass("is-danger");
-      removeGroupButton.toggleClass("is-disabled", parentGroup.conditions.length <= 1);
-      removeGroupButton.disabled = parentGroup.conditions.length <= 1;
     }
 
     const nodesEl = groupEl.createDiv({ cls: "about-blank-stat-editor-group-nodes" });
@@ -320,16 +315,11 @@ export class CustomStatEditorModal {
     }
 
     const removeButton = this.createIconButton(rowEl, "trash", "删除条件", () => {
-      if (group.conditions.length <= 1) {
-        return;
-      }
       group.conditions = group.conditions.filter((node) => node.id !== condition.id);
       this.renderBody();
       void this.commitChanges();
     });
     removeButton.addClass("is-danger");
-    removeButton.toggleClass("is-disabled", group.conditions.length <= 1);
-    removeButton.disabled = group.conditions.length <= 1;
   }
 
   private async commitChanges(): Promise<void> {
