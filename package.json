@@ -1,7 +1,7 @@
 {
   "name": "albus-custom-about-blank",
-  "version": "3.2.0",
-  "description": "允许用户高度自定义新标签页的一款插件",
+  "version": "3.2.1",
+  "description": "A plugin that lets you fully customize the new tab page with logo, stats, heatmap, search, and shortcut actions.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

@@ -1,9 +1,9 @@
 {
   "id": "albus-custom-about-blank",
   "name": "Custom About Blank",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "minAppVersion": "1.11.4",
-  "description": "允许用户高度自定义新标签页的一款插件",
+  "description": "A plugin that lets you fully customize the new tab page with logo, stats, heatmap, search, and shortcut actions.",
   "author": "Ai-Jani & Albus",
   "authorUrl": "https://github.com/AlbusGuo",
   "isDesktopOnly": true
