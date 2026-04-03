@@ -4,12 +4,7 @@ export const DEFAULT_LOGO_SVG = 'data:image/svg+xml;base64,' + btoa('<svg xmlns=
 
 export const CSS_CLASSES = {
   aboutBlankContainer: "about-blank-button-container",
-  aboutBlank: "about-blank-button",
   visible: "about-blank-visible",
-  ctaExButton: "about-blank-cta-ex-button",
-  iconText: "about-blank-icon-text",
-  actionIconText: "about-blank-action-icon-text",
-  ctaIcon: "about-blank-cta-icon",
 } as const;
 
 export const CSS_VARS = {

@@ -19,7 +19,7 @@
   color: var(--text-muted);
   white-space: nowrap;
   pointer-events: auto;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
   opacity: 0.9;
   max-width: 150px;
@@ -304,6 +304,11 @@
   transform: scale(0.85) rotate(-3deg) !important;
   box-shadow: none !important;
   animation-play-state: paused !important;
+}
+
+.about-blank-stats-inline-has-drag .about-blank-stats-inline-item:not(.about-blank-stats-inline-dragging) {
+  animation-play-state: paused;
+  transition: none;
 }
 
 .about-blank-stats-inline-drag-over {

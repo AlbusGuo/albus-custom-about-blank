@@ -658,7 +658,6 @@ export default class AboutBlank extends Plugin {
   private alreadyAdded = (elements: HTMLElement[]): boolean => {
     const classesToAdd = [
       CSS_CLASSES.aboutBlankContainer,
-      CSS_CLASSES.aboutBlank,
     ];
     return classesToAdd.some((className) => hasClassElements(elements, className));
   };
@@ -1146,7 +1145,7 @@ export default class AboutBlank extends Plugin {
         fileDate = this.parseFrontmatterDate(cache.frontmatter[frontmatterField]);
       }
 
-      if (fileDate && !isNaN(fileDate.getTime())) {
+      if (fileDate && !Number.isNaN(fileDate.getTime())) {
         const utcFileDate = new Date(Date.UTC(
           fileDate.getFullYear(),
           fileDate.getMonth(),
@@ -1196,7 +1195,7 @@ export default class AboutBlank extends Plugin {
           fileDate = this.parseFrontmatterDate(cache.frontmatter[frontmatterField]);
         }
         
-        if (fileDate && !isNaN(fileDate.getTime())) {
+        if (fileDate && !Number.isNaN(fileDate.getTime())) {
           const utcFileDate = new Date(Date.UTC(
             fileDate.getFullYear(),
             fileDate.getMonth(),
@@ -1549,7 +1548,7 @@ export default class AboutBlank extends Plugin {
         const finalY = startY + (rowIndex * verticalSpacing);
 
         const bubble = document.createElement('div');
-        bubble.className = isLeft ? 'about-blank-stats-bubble about-blank-stats-bubble-left' : 'about-blank-stats-bubble about-blank-stats-bubble-right';
+        bubble.className = isLeft ? 'about-blank-stats-bubble-left' : 'about-blank-stats-bubble-right';
         bubble.setAttribute('data-column', columnIndex.toString());
         bubble.setAttribute('draggable', 'true');
         bubble.setAttribute('data-stat-id', stat.id);
@@ -1601,7 +1600,7 @@ export default class AboutBlank extends Plugin {
               this.settings.statOrder = currentOrder;
                 void this.saveSettingsSilent();
               // 交换气泡位置
-              const allBubbles = Array.from(statsContainer.querySelectorAll<HTMLElement>('.about-blank-stats-bubble'));
+              const allBubbles = Array.from(statsContainer.querySelectorAll<HTMLElement>('[data-stat-id]'));
               const draggedBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === draggedStatId);
               const targetBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === targetStatId);
               if (draggedBubble && targetBubble) {
@@ -1670,10 +1669,12 @@ export default class AboutBlank extends Plugin {
         item.addEventListener('dragstart', (e) => {
           e.dataTransfer?.setData('text/plain', stat.id);
           item.classList.add('about-blank-stats-inline-dragging');
+          inlineContainer.classList.add('about-blank-stats-inline-has-drag');
           e.dataTransfer!.effectAllowed = 'move';
         });
         item.addEventListener('dragend', () => {
           item.classList.remove('about-blank-stats-inline-dragging');
+          inlineContainer.classList.remove('about-blank-stats-inline-has-drag');
           inlineContainer.querySelectorAll('.about-blank-stats-inline-drag-over').forEach(el => el.classList.remove('about-blank-stats-inline-drag-over'));
         });
         item.addEventListener('dragover', (e) => {
@@ -1805,7 +1806,7 @@ export default class AboutBlank extends Plugin {
           fileDate = this.parseFrontmatterDate(cache.frontmatter[frontmatterField]);
         }
         
-        if (fileDate && !isNaN(fileDate.getTime())) {
+        if (fileDate && !Number.isNaN(fileDate.getTime())) {
           const utcFileDate = new Date(Date.UTC(
             fileDate.getFullYear(),
             fileDate.getMonth(),
@@ -2144,11 +2145,6 @@ export default class AboutBlank extends Plugin {
         document.querySelectorAll('.about-blank-stats-inline').forEach(el => el.remove());
       }
 
-      // Force a reflow to ensure styles are applied
-      setTimeout(() => {
-        const event = new Event('resize');
-        window.dispatchEvent(event);
-      }, 100);
     } catch (error) {
       loggerOnError(error, "应用Logo设置失败\n(About Blank)");
     }

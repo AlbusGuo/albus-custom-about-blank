@@ -73,13 +73,13 @@ export class HeatmapFilesModal extends Modal {
       });
 
       // 文件名
-      const fileName = fileInfoContainer.createEl('div', { 
+      fileInfoContainer.createEl('div', { 
         cls: 'about-blank-heatmap-files-item-name',
         text: file.basename 
       });
 
       // 文件路径
-      const filePath = fileInfoContainer.createEl('div', { 
+      fileInfoContainer.createEl('div', { 
         cls: 'about-blank-heatmap-files-item-path',
         text: file.path 
       });

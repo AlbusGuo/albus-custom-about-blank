@@ -1,37 +1,3 @@
-.about-blank-cta-ex-button {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-.about-blank-cta-ex-button.clickable-icon:hover {
-  opacity: unset;
-  color: unset;
-  background-color: var(--interactive-accent-hover);
-}
-
-
-.about-blank-icon-text {
-  padding: var(--size-2-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--clickable-icon-radius);
-}
-
-.about-blank-action-icon-text {
-  padding: var(--size-2-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 1px solid var(--background-modifier-border);
-  padding-right: var(--size-2-3);
-  margin-right: var(--size-2-3);
-}
-
-.about-blank-cta-icon {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
 .about-blank-custom-icon-svg {
   display: block;
   width: 100%;

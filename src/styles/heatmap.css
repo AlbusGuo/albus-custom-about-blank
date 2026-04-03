@@ -59,7 +59,7 @@
   height: 11px;
   border-radius: 2px;
   background-color: var(--background-primary);
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease;
   cursor: pointer;
   margin-top: 2px;
   flex-grow: 0; 
@@ -76,7 +76,7 @@
 .about-blank-heatmap-cell:not([data-level="0"]):hover {
   opacity: 0.8;
   transform: scale(1.1);
-  transition: all 0.15s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .about-blank-heatmap-cell.clickable {
@@ -103,7 +103,7 @@
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
   opacity: 0;
   transform: scale(0.8);
 }
@@ -124,7 +124,7 @@
   color: var(--text-normal);
   opacity: 0;
   transform: scale(0.9);
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .about-blank-heatmap-controls:hover .about-blank-heatmap-year-display {
@@ -181,7 +181,7 @@
   background-color: var(--background-secondary);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   border: 1px solid transparent;
 }
 
