@@ -106,6 +106,7 @@ export default class AboutBlank extends Plugin {
   private globalRenderHeatmap: (() => void) | null = null;
   private globalRenderStats: (() => void) | null = null;
   private globalRenderStatsImmediate: (() => void) | null = null;
+  private globalRenderButtons: (() => void) | null = null;
   private workspaceEventsRegistered = false;
   private logoImageReady = false;
 
@@ -162,6 +163,13 @@ export default class AboutBlank extends Plugin {
       // 标记插件就绪，渲染所有已等待的新标签页
       this.pluginReady = true;
       this.renderAllPendingNewTabs();
+
+      // 照搬统计/热力图模式：纯 DOM 查询的按钮渲染器，供事件/轮询调用
+      this.setupButtonsRenderer();
+
+      this.registerInterval(window.setInterval(() => {
+        this.renderAllPendingNewTabs();
+      }, 500));
     } catch (error) {
       loggerOnError(error, "设置加载失败\n(About Blank)");
     }
@@ -327,9 +335,9 @@ export default class AboutBlank extends Plugin {
     actionListEl.toggleAttribute('hidden', !shouldShowShortcutSection);
 
     if (shouldShowShortcutSection) {
-      emptyView.emptyTitleEl.classList.add(CSS_CLASSES.visible);
+      emptyView.emptyTitleEl?.classList.add(CSS_CLASSES.visible);
     } else {
-      emptyView.emptyTitleEl.classList.remove(CSS_CLASSES.visible);
+      emptyView.emptyTitleEl?.classList.remove(CSS_CLASSES.visible);
     }
 
     actionListEl.classList.toggle('about-blank-card-grid', this.shouldUseCardLayout());
@@ -348,7 +356,7 @@ export default class AboutBlank extends Plugin {
   };
 
   private cleanupRenderedNewTab = (emptyView: UnsafeEmptyView, container: HTMLElement | null): void => {
-    const actionListEl = emptyView.actionListEl;
+    const actionListEl = this.getActionListEl(emptyView);
     if (!actionListEl) {
       return;
     }
@@ -418,7 +426,7 @@ export default class AboutBlank extends Plugin {
 
     emptyLeaves.forEach((leaf) => {
       const emptyView = leaf.view as UnsafeEmptyView;
-      const actionListEl = emptyView.actionListEl;
+      const actionListEl = this.getActionListEl(emptyView);
       const container = actionListEl?.closest('.empty-state-container');
       this.cleanupRenderedNewTab(emptyView, container instanceof HTMLElement ? container : null);
     });
@@ -427,7 +435,7 @@ export default class AboutBlank extends Plugin {
     if (this.pluginReady && this.shouldCustomizeNewTab()) {
       emptyLeaves.forEach((leaf) => {
         const emptyView = leaf.view as UnsafeEmptyView;
-        const actionListEl = emptyView.actionListEl;
+        const actionListEl = this.getActionListEl(emptyView);
         if (!actionListEl) return;
         const container = actionListEl.closest('.empty-state-container');
         this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
@@ -453,15 +461,15 @@ export default class AboutBlank extends Plugin {
 
   private addButtonsEventHandler = (): void => {
     const leaf = this.app.workspace.getMostRecentLeaf();
-    if (leaf?.view?.getViewType() !== UNSAFE_VIEW_TYPES.empty) {
-      return;
+    if (leaf?.view?.getViewType() === UNSAFE_VIEW_TYPES.empty) {
+      this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
     }
-    this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
+    this.renderAllPendingNewTabs();
   };
 
   private addButtonsToNewTab = (emptyView: UnsafeEmptyView): void => {
     try {
-      const emptyActionListEl = emptyView.actionListEl;
+      const emptyActionListEl = this.getActionListEl(emptyView);
       const childElements = emptyActionListEl
         ? Array.from(emptyActionListEl.children) as HTMLElement[]
         : null;
@@ -476,8 +484,12 @@ export default class AboutBlank extends Plugin {
         return;
       }
 
+      // rebuildView() 复用容器元素，about-blank-ready 可能残留但按钮已清除
       if (container?.classList.contains('about-blank-ready')) {
-        return;
+        if (emptyActionListEl.querySelector(`.${CSS_CLASSES.aboutBlankContainer}`)) {
+          return;
+        }
+        container.classList.remove('about-blank-ready', 'about-blank-managed');
       }
 
       if (this.alreadyAdded(childElements)) {
@@ -506,21 +518,71 @@ export default class AboutBlank extends Plugin {
 
   // 插件就绪后，统一渲染所有等待中的新标签页
   private renderAllPendingNewTabs = (): void => {
+    if (!this.pluginReady) return;
     const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
+    if (emptyLeaves.length === 0) return;
     emptyLeaves.forEach((leaf) => {
       const emptyView = leaf.view as UnsafeEmptyView;
-      const actionListEl = emptyView.actionListEl;
+      const actionListEl = this.getActionListEl(emptyView);
       if (!actionListEl) return;
       const container = actionListEl.closest('.empty-state-container');
-      // 已经渲染过的跳过
-      if (container?.classList.contains('about-blank-ready')) return;
+      // about-blank-ready 可能在 rebuildView() 后残留（容器元素被复用），
+      // 需校验按钮是否实际存在
+      if (container?.classList.contains('about-blank-ready')) {
+        if (actionListEl.querySelector(`.${CSS_CLASSES.aboutBlankContainer}`)) {
+          return;
+        }
+        // 容器有 ready 标记但按钮不存在 = rebuildView 复用容器，强制重新渲染
+        container.classList.remove('about-blank-ready', 'about-blank-managed');
+      }
       this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
     });
   };
 
+  // rebuildView() 后 view.actionListEl 可能返回 null（属性未更新），
+  // 统一用此方法获取：优先 view 属性，为 null 时从 DOM 查询兜底
+  private getActionListEl = (emptyView: UnsafeEmptyView): HTMLElement | null => {
+    return (emptyView.actionListEl as HTMLElement | null)
+      ?? (emptyView as unknown as { containerEl: HTMLElement }).containerEl
+        ?.querySelector('.empty-state-action-list')
+      ?? null;
+  };
+
+  // 与统计/热力图完全相同的模式：纯 DOM 查询，不依赖 view 对象属性。
+  // rebuildView() 后此方法仍能正确找到 action-list 并渲染按钮。
+  private setupButtonsRenderer = (): void => {
+    const renderButtons = (): void => {
+      if (!this.shouldRenderCustomShortcuts()) return;
+
+      const practicalActions: PracticalAction[] = this.settings.actions
+        .map((action) => toPracticalAction(this.app, action))
+        .filter((a): a is PracticalAction => a !== undefined);
+      if (practicalActions.length === 0) return;
+
+      const emptyLeaves = document.querySelectorAll(
+        '.workspace-leaf-content[data-type="empty"]',
+      );
+      emptyLeaves.forEach((leafContent) => {
+        const actionListEl = leafContent.querySelector(
+          '.empty-state-action-list',
+        ) as HTMLElement | null;
+        if (!actionListEl) return;
+        // 已渲染则跳过
+        if (actionListEl.querySelector(`.${CSS_CLASSES.aboutBlankContainer}`)) return;
+
+        if (this.shouldUseCardLayout()) {
+          actionListEl.classList.add('about-blank-card-grid');
+        }
+        this.addActionButtonsAsCards(actionListEl, practicalActions);
+      });
+    };
+
+    this.globalRenderButtons = renderButtons;
+  };
+
   // 统一渲染：Logo + 统计 + 搜索框 + 按钮 + 热力图，按用户要求从上到下排列
   private renderNewTabContent = (emptyView: UnsafeEmptyView, container: HTMLElement | null): void => {
-    const emptyActionListEl = emptyView.actionListEl;
+    const emptyActionListEl = this.getActionListEl(emptyView);
     if (!emptyActionListEl) return;
 
     if (!this.shouldCustomizeNewTab()) {
@@ -990,6 +1052,14 @@ export default class AboutBlank extends Plugin {
           this.globalRenderStats();
         }
 
+        // 渲染自定义按钮（与统计完全相同的模式）
+        if (this.settings.shortcutListEnabled && this.globalRenderButtons) {
+          this.globalRenderButtons();
+        }
+
+        // 确保空标签页的完整自定义内容（按钮/搜索等）不被遗漏
+        this.renderAllPendingNewTabs();
+
         // 重置处理状态
         setTimeout(() => {
           isProcessingLeafChange = false;
@@ -1043,6 +1113,11 @@ export default class AboutBlank extends Plugin {
                 this.globalRenderHeatmap();
               }
               
+              // 渲染自定义按钮
+              if (this.settings.shortcutListEnabled && this.globalRenderButtons) {
+                this.globalRenderButtons();
+              }
+              
               // 重置处理状态
               setTimeout(() => {
                 isProcessing = false;
@@ -1064,6 +1139,11 @@ export default class AboutBlank extends Plugin {
               // 渲染统计气泡
               if (this.settings.showStats && this.globalRenderStats) {
                 this.globalRenderStats();
+              }
+              
+              // 渲染自定义按钮
+              if (this.settings.shortcutListEnabled && this.globalRenderButtons) {
+                this.globalRenderButtons();
               }
               
               // 重置处理状态
