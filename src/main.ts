@@ -106,7 +106,6 @@ export default class AboutBlank extends Plugin {
   private globalRenderHeatmap: (() => void) | null = null;
   private globalRenderStats: (() => void) | null = null;
   private globalRenderStatsImmediate: (() => void) | null = null;
-  private globalRenderButtons: (() => void) | null = null;
   private workspaceEventsRegistered = false;
   private logoImageReady = false;
 
@@ -164,12 +163,9 @@ export default class AboutBlank extends Plugin {
       this.pluginReady = true;
       this.renderAllPendingNewTabs();
 
-      // 照搬统计/热力图模式：纯 DOM 查询的按钮渲染器，供事件/轮询调用
-      this.setupButtonsRenderer();
-
       this.registerInterval(window.setInterval(() => {
         this.renderAllPendingNewTabs();
-      }, 500));
+      }, 200));
     } catch (error) {
       loggerOnError(error, "设置加载失败\n(About Blank)");
     }
@@ -546,38 +542,6 @@ export default class AboutBlank extends Plugin {
       ?? (emptyView as unknown as { containerEl: HTMLElement }).containerEl
         ?.querySelector('.empty-state-action-list')
       ?? null;
-  };
-
-  // 与统计/热力图完全相同的模式：纯 DOM 查询，不依赖 view 对象属性。
-  // rebuildView() 后此方法仍能正确找到 action-list 并渲染按钮。
-  private setupButtonsRenderer = (): void => {
-    const renderButtons = (): void => {
-      if (!this.shouldRenderCustomShortcuts()) return;
-
-      const practicalActions: PracticalAction[] = this.settings.actions
-        .map((action) => toPracticalAction(this.app, action))
-        .filter((a): a is PracticalAction => a !== undefined);
-      if (practicalActions.length === 0) return;
-
-      const emptyLeaves = document.querySelectorAll(
-        '.workspace-leaf-content[data-type="empty"]',
-      );
-      emptyLeaves.forEach((leafContent) => {
-        const actionListEl = leafContent.querySelector(
-          '.empty-state-action-list',
-        ) as HTMLElement | null;
-        if (!actionListEl) return;
-        // 已渲染则跳过
-        if (actionListEl.querySelector(`.${CSS_CLASSES.aboutBlankContainer}`)) return;
-
-        if (this.shouldUseCardLayout()) {
-          actionListEl.classList.add('about-blank-card-grid');
-        }
-        this.addActionButtonsAsCards(actionListEl, practicalActions);
-      });
-    };
-
-    this.globalRenderButtons = renderButtons;
   };
 
   // 统一渲染：Logo + 统计 + 搜索框 + 按钮 + 热力图，按用户要求从上到下排列
@@ -1052,12 +1016,7 @@ export default class AboutBlank extends Plugin {
           this.globalRenderStats();
         }
 
-        // 渲染自定义按钮（与统计完全相同的模式）
-        if (this.settings.shortcutListEnabled && this.globalRenderButtons) {
-          this.globalRenderButtons();
-        }
-
-        // 确保空标签页的完整自定义内容（按钮/搜索等）不被遗漏
+        // 完整渲染空标签页自定义内容（统一路径，包含布局设置）
         this.renderAllPendingNewTabs();
 
         // 重置处理状态
@@ -1113,10 +1072,8 @@ export default class AboutBlank extends Plugin {
                 this.globalRenderHeatmap();
               }
               
-              // 渲染自定义按钮
-              if (this.settings.shortcutListEnabled && this.globalRenderButtons) {
-                this.globalRenderButtons();
-              }
+              // 新标签页也触发完整渲染（按钮/搜索/布局）
+              this.renderAllPendingNewTabs();
               
               // 重置处理状态
               setTimeout(() => {
@@ -1141,10 +1098,8 @@ export default class AboutBlank extends Plugin {
                 this.globalRenderStats();
               }
               
-              // 渲染自定义按钮
-              if (this.settings.shortcutListEnabled && this.globalRenderButtons) {
-                this.globalRenderButtons();
-              }
+              // 触发完整渲染（按钮/搜索/布局）
+              this.renderAllPendingNewTabs();
               
               // 重置处理状态
               setTimeout(() => {
