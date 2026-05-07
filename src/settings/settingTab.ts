@@ -36,6 +36,18 @@ import {
 } from "src/settings/customStatEditorModal";
 
 import {
+  DateStatEditorModal,
+} from "src/settings/dateStatEditorModal";
+
+import {
+  type DateStatDefinition,
+  DATE_STAT_TYPES,
+  createDateStat,
+  isDateStatDefinition,
+  getDateStatTypeLabel,
+} from "src/settings/dateStatTypes";
+
+import {
   countCustomStatFilterConditions,
   CUSTOM_STAT_FILTER_CONDITION_TYPES,
   CUSTOM_STAT_FILTER_CONJUNCTIONS,
@@ -104,6 +116,8 @@ export interface AboutBlankSettings {
   heatmapColorSegments: Array<{min: number, max: number, color: string}>;
   customStats: CustomStatDefinition[];
   statOrder: string[];
+  dateStats: DateStatDefinition[];
+  dateStatOrder: string[];
   actions: Action[];
   settingsTab: string;
 }
@@ -141,6 +155,8 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   ],
   customStats: [],
   statOrder: [],
+  dateStats: [],
+  dateStatOrder: [],
   actions: [],
   settingsTab: "shortcuts",
 } as const;
@@ -225,6 +241,12 @@ export const settingsPropTypeCheck: {
   statOrder: (value: unknown) => {
     return Array.isArray(value) && value.every(item => typeof item === "string");
   },
+  dateStats: (value: unknown) => {
+    return Array.isArray(value) && value.every(isDateStatDefinition);
+  },
+  dateStatOrder: (value: unknown) => {
+    return Array.isArray(value) && value.every(item => typeof item === "string");
+  },
   searchBoxEnabled: (value: unknown) => isBool(value),
   showStats: (value: unknown) => isBool(value),
   showUsageDays: (value: unknown) => isBool(value),
@@ -251,6 +273,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private customStatEditorIndex: number | null = null;
   private customStatEditorRefreshPending = false;
   private customStatRowElements = new Map<number, HTMLElement>();
+  private dateStatEditorModal: DateStatEditorModal | null = null;
+  private dateStatEditorIndex: number | null = null;
+  private dateStatEditorRefreshPending = false;
+  private dateStatRowElements = new Map<number, HTMLElement>();
   private actionEditorModal: ActionEditorModal | null = null;
   private actionEditorIndex: number | null = null;
   private actionEditorRefreshPending = false;
@@ -316,11 +342,16 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     const activeCustomStatIndex = this.plugin.settings.settingsTab === "stats"
       ? this.customStatEditorIndex
       : null;
+    const activeDateStatIndex = this.plugin.settings.settingsTab === "stats"
+      ? this.dateStatEditorIndex
+      : null;
     this.closeActionEditor(false);
     this.closeCustomStatEditor(false);
+    this.closeDateStatEditor(false);
     contentEl.empty();
     this.actionRowElements.clear();
     this.customStatRowElements.clear();
+    this.dateStatRowElements.clear();
 
     if (this.plugin.settings.settingsTab === "shortcuts") {
       this.makeSettingsShortcuts(contentEl as HTMLElement);
@@ -342,13 +373,21 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           this.reopenCustomStatEditor();
         });
       }
+      if (activeDateStatIndex !== null && activeDateStatIndex < this.plugin.settings.dateStats.length) {
+        this.dateStatEditorIndex = activeDateStatIndex;
+        requestAnimationFrame(() => {
+          this.reopenDateStatEditor();
+        });
+      }
     } else if (this.plugin.settings.settingsTab === "heatmap") {
       this.actionEditorIndex = null;
       this.customStatEditorIndex = null;
+      this.dateStatEditorIndex = null;
       this.makeSettingsHeatmap(contentEl as HTMLElement);
     } else {
       this.actionEditorIndex = null;
       this.customStatEditorIndex = null;
+      this.dateStatEditorIndex = null;
     }
   };
 
@@ -701,61 +740,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     });
 
     if (this.plugin.settings.showStats) {
-      // 内置统计项标题
+      // 默认统计项标题
       new Setting(containerEl)
-        .setName("内置统计项目")
+        .setName("默认")
         .setHeading();
 
       const builtinGroup = new SettingGroup(containerEl);
-
-      builtinGroup.addSetting((usageDaysSetting) => {
-        usageDaysSetting
-          .setName("Obsidian 使用天数")
-          .setDesc("显示使用 Obsidian 的天数")
-          .addToggle((toggle) => {
-            toggle
-              .setValue(this.plugin.settings.showUsageDays)
-              .onChange(async (value) => {
-                try {
-                  this.plugin.settings.showUsageDays = value;
-                  await this.plugin.saveSettings();
-                  this.plugin.refreshAllNewTabs();
-                  this.renderCurrentTab();
-                } catch (error) {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                }
-              });
-          });
-      });
-
-      if (this.plugin.settings.showUsageDays) {
-        // Obsidian 开始使用日期
-        builtinGroup.addSetting((startDateSetting) => {
-          let obsidianStartDateInput: TextComponent;
-          startDateSetting
-            .setName("开始使用 Obsidian 的日期")
-            .setDesc("用于计算使用 Obsidian 的天数")
-            .addText((text) => {
-              obsidianStartDateInput = text;
-              text.inputEl.type = 'date';
-              text
-                .setValue(this.plugin.settings.obsidianStartDate)
-                .onChange((value) => {
-                  try {
-                    this.plugin.settings.obsidianStartDate = value;
-                  } catch (error) {
-                    loggerOnError(error, "设置中出现错误\n(About Blank)");
-                  }
-                });
-                
-              obsidianStartDateInput.inputEl.addEventListener('blur', () => {
-                void this.plugin.saveSettings().catch((error) => {
-                  loggerOnError(error, "设置中出现错误\n(About Blank)");
-                });
-              });
-            });
-        });
-      }
 
       builtinGroup.addSetting((fileCountSetting) => {
         fileCountSetting
@@ -793,9 +783,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           });
       });
 
-      // 自定义统计项目标题
+      // 文件统计项目标题
       new Setting(containerEl)
-        .setName("自定义统计项目")
+        .setName("文件统计")
         .setHeading();
 
       const customStatsGroup = new SettingGroup(containerEl);
@@ -803,14 +793,14 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       if (this.plugin.settings.customStats.length === 0) {
         customStatsGroup.addSetting((emptySetting) => {
           emptySetting
-            .setName('还没有添加任何自定义统计项目')
+            .setName('还没有添加任何文件统计项目')
             .setDesc('点击下方按钮开始创建');
         });
       } else {
         this.plugin.settings.customStats.forEach((stat, index) => {
           customStatsGroup.addSetting((statHeaderSetting) => {
             statHeaderSetting
-              .setName(stat.displayName.trim() || `统计项目 ${index + 1}`)
+              .setName(stat.displayName.trim() || `文件统计 ${index + 1}`)
               .setDesc(this.getCustomStatSummary(stat));
             statHeaderSetting.settingEl.addClass('about-blank-stat-setting');
             this.customStatRowElements.set(index, statHeaderSetting.settingEl);
@@ -829,8 +819,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 .setTooltip("删除")
                 .onClick(async () => {
                   const confirmed = await ConfirmModal.confirm(this.app, {
-                    title: "删除统计项目",
-                    message: `确定要删除统计项目「${stat.displayName.trim() || `统计项目 ${index + 1}`}」吗？`,
+                    title: "删除文件统计",
+                    message: `确定要删除文件统计「${stat.displayName.trim() || `文件统计 ${index + 1}`}」吗？`,
                     confirmText: "删除",
                     cancelText: "取消",
                     danger: true,
@@ -860,7 +850,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         addSetting.controlEl.addClass('about-blank-item-add-container');
         addSetting.addButton((button) => {
           button
-            .setButtonText('添加新统计项目')
+            .setButtonText('添加文件统计')
             .setClass('about-blank-item-add-btn')
             .onClick(async () => {
               this.plugin.settings.customStats.push(createCustomStatDefinition());
@@ -871,7 +861,94 @@ export class AboutBlankSettingTab extends PluginSettingTab {
             });
         });
       });
+
+      // 日期统计项目标题
+      new Setting(containerEl)
+        .setName("日期统计")
+        .setHeading();
+
+      const dateStatsGroup = new SettingGroup(containerEl);
+
+      if (this.plugin.settings.dateStats.length === 0) {
+        dateStatsGroup.addSetting((emptySetting) => {
+          emptySetting
+            .setName('还没有添加任何日期统计项目')
+            .setDesc('点击下方按钮开始创建');
+        });
+      } else {
+        this.plugin.settings.dateStats.forEach((stat, index) => {
+          dateStatsGroup.addSetting((statHeaderSetting) => {
+            statHeaderSetting
+              .setName(stat.title.trim() || `日期统计 ${index + 1}`)
+              .setDesc(this.getDateStatSummary(stat));
+            statHeaderSetting.settingEl.addClass('about-blank-stat-setting');
+            this.dateStatRowElements.set(index, statHeaderSetting.settingEl);
+
+            statHeaderSetting.addExtraButton((button) => {
+              button
+                .setIcon("pencil")
+                .setTooltip("编辑")
+                .onClick(() => {
+                  this.openDateStatEditor(index);
+                });
+            });
+
+            statHeaderSetting.addExtraButton((button) => {
+              button.setIcon("trash")
+                .setTooltip("删除")
+                .onClick(async () => {
+                  const confirmed = await ConfirmModal.confirm(this.app, {
+                    title: "删除日期统计",
+                    message: `确定要删除日期统计「${stat.title.trim() || `日期统计 ${index + 1}`}」吗？`,
+                    confirmText: "删除",
+                    cancelText: "取消",
+                    danger: true,
+                  });
+                  if (!confirmed) {
+                    return;
+                  }
+                  const previousEditorIndex = this.dateStatEditorIndex;
+                  this.plugin.settings.dateStats.splice(index, 1);
+                  if (previousEditorIndex === index) {
+                    this.dateStatEditorIndex = null;
+                  } else if (previousEditorIndex !== null && previousEditorIndex > index) {
+                    this.dateStatEditorIndex = previousEditorIndex - 1;
+                  }
+                  await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                  this.renderCurrentTab();
+                });
+            });
+
+          });
+        });
+      }
+
+      dateStatsGroup.addSetting((addSetting) => {
+        addSetting.settingEl.addClass('about-blank-item-add-setting');
+        addSetting.controlEl.addClass('about-blank-item-add-container');
+        addSetting.addButton((button) => {
+          button
+            .setButtonText('添加日期统计')
+            .setClass('about-blank-item-add-btn')
+            .onClick(async () => {
+              this.plugin.settings.dateStats.push(createDateStat());
+              this.dateStatEditorIndex = this.plugin.settings.dateStats.length - 1;
+              await this.plugin.saveSettings();
+              this.plugin.refreshAllNewTabs();
+              this.renderCurrentTab();
+            });
+        });
+      });
     }
+  };
+
+  private getDateStatSummary = (stat: DateStatDefinition): string => {
+    const typeLabel = getDateStatTypeLabel(stat.type);
+    const dateLabel = stat.type === DATE_STAT_TYPES.anniversary
+      ? stat.date
+      : stat.date;
+    return `${typeLabel} · ${dateLabel || "未设置日期"}`;
   };
 
   private getCustomStatSummary = (stat: CustomStat): string => {
@@ -952,7 +1029,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
     const nameEl = rowEl.querySelector('.setting-item-name');
     if (nameEl) {
-      nameEl.setText(stat.displayName.trim() || `统计项目 ${index + 1}`);
+      nameEl.setText(stat.displayName.trim() || `文件统计 ${index + 1}`);
     }
 
     const summary = this.getCustomStatSummary(stat);
@@ -971,6 +1048,102 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
     descEl?.remove();
   };
+
+  // ===========================================================================
+  //                              日期统计编辑器
+  // ===========================================================================
+
+  private openDateStatEditor = (index: number): void => {
+    const stat = this.plugin.settings.dateStats[index];
+    const rowEl = this.dateStatRowElements.get(index);
+    if (!stat || !rowEl) {
+      return;
+    }
+
+    if (this.dateStatEditorIndex === index && this.dateStatEditorModal) {
+      this.closeDateStatEditor();
+      return;
+    }
+
+    this.closeDateStatEditor(false);
+    this.dateStatEditorIndex = index;
+    this.dateStatEditorModal = new DateStatEditorModal(this.app, stat, {
+      onChange: async (nextStat: DateStatDefinition) => {
+        if (!this.plugin.settings.dateStats[index]) {
+          return;
+        }
+        this.plugin.settings.dateStats[index] = nextStat;
+        this.dateStatEditorRefreshPending = true;
+        await this.plugin.saveSettingsSilent();
+        this.updateDateStatRow(index);
+      },
+      onClose: () => {
+        this.dateStatEditorModal = null;
+        this.dateStatEditorIndex = null;
+        this.flushDateStatEditorRefresh();
+      },
+    });
+    this.dateStatEditorModal.open();
+  };
+
+  private reopenDateStatEditor = (): void => {
+    if (this.dateStatEditorIndex === null) {
+      return;
+    }
+    if (!this.dateStatRowElements.has(this.dateStatEditorIndex)) {
+      this.dateStatEditorIndex = null;
+      return;
+    }
+    this.openDateStatEditor(this.dateStatEditorIndex);
+  };
+
+  private closeDateStatEditor = (clearIndex: boolean = true): void => {
+    const modal = this.dateStatEditorModal;
+    this.dateStatEditorModal = null;
+    if (clearIndex) {
+      this.dateStatEditorIndex = null;
+    }
+    modal?.close();
+  };
+
+  private flushDateStatEditorRefresh = (): void => {
+    if (!this.dateStatEditorRefreshPending) {
+      return;
+    }
+    this.dateStatEditorRefreshPending = false;
+    this.plugin.refreshAllNewTabs();
+  };
+
+  private updateDateStatRow = (index: number): void => {
+    const rowEl = this.dateStatRowElements.get(index);
+    const stat = this.plugin.settings.dateStats[index];
+    if (!rowEl || !stat) {
+      return;
+    }
+
+    const nameEl = rowEl.querySelector('.setting-item-name');
+    if (nameEl) {
+      nameEl.setText(stat.title.trim() || `日期统计 ${index + 1}`);
+    }
+
+    const summary = this.getDateStatSummary(stat);
+    const descEl = rowEl.querySelector('.setting-item-description');
+    if (summary) {
+      if (descEl instanceof HTMLElement) {
+        descEl.setText(summary);
+      } else {
+        rowEl.querySelector('.setting-item-info')?.createDiv({
+          cls: 'setting-item-description',
+          text: summary,
+        });
+      }
+      return;
+    }
+
+    descEl?.remove();
+  };
+
+  // ===========================================================================
 
   private getCustomStatOperatorLabel = (operator: CustomStatFilterOperator): string => {
     switch (operator) {

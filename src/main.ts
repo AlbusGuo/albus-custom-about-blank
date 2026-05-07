@@ -50,6 +50,12 @@ import {
 } from "src/utils/customStatFilters";
 
 import {
+  type DateStatDefinition,
+  calcDateStatValue,
+  normalizeDateStatDefinitions,
+} from "src/settings/dateStatTypes";
+
+import {
   adjustInt,
   loggerOnError,
 } from "src/commons";
@@ -75,7 +81,7 @@ import {
 } from "src/utils/customIconManager";
 // =============================================================================
 
-type StatItem = { id: string; label: string; value: number | string };
+type StatItem = { id: string; label: string; value: number | string; dateStatType?: string };
 type HeatmapDateCountMap = Record<string, number>;
 type HeatmapColorSegment = AboutBlankSettings["heatmapColorSegments"][number];
 type CustomStat = AboutBlankSettings["customStats"][number];
@@ -162,10 +168,6 @@ export default class AboutBlank extends Plugin {
       // 标记插件就绪，渲染所有已等待的新标签页
       this.pluginReady = true;
       this.renderAllPendingNewTabs();
-
-      this.registerInterval(window.setInterval(() => {
-        this.renderAllPendingNewTabs();
-      }, 200));
     } catch (error) {
       loggerOnError(error, "设置加载失败\n(About Blank)");
     }
@@ -234,6 +236,10 @@ export default class AboutBlank extends Plugin {
     });
 
     sanitizedSettings.customStats = normalizeCustomStatDefinitions(loadedSettingsRecord.customStats);
+    sanitizedSettings.dateStats = normalizeDateStatDefinitions(loadedSettingsRecord.dateStats);
+    sanitizedSettings.dateStatOrder = Array.isArray(loadedSettingsRecord.dateStatOrder)
+      ? loadedSettingsRecord.dateStatOrder.filter((id: unknown) => typeof id === "string") as string[]
+      : [];
 
     if (
       !('shortcutListEnabled' in loadedSettingsRecord)
@@ -331,9 +337,9 @@ export default class AboutBlank extends Plugin {
     actionListEl.toggleAttribute('hidden', !shouldShowShortcutSection);
 
     if (shouldShowShortcutSection) {
-      emptyView.emptyTitleEl?.classList.add(CSS_CLASSES.visible);
+      emptyView.emptyTitleEl.classList.add(CSS_CLASSES.visible);
     } else {
-      emptyView.emptyTitleEl?.classList.remove(CSS_CLASSES.visible);
+      emptyView.emptyTitleEl.classList.remove(CSS_CLASSES.visible);
     }
 
     actionListEl.classList.toggle('about-blank-card-grid', this.shouldUseCardLayout());
@@ -352,7 +358,7 @@ export default class AboutBlank extends Plugin {
   };
 
   private cleanupRenderedNewTab = (emptyView: UnsafeEmptyView, container: HTMLElement | null): void => {
-    const actionListEl = this.getActionListEl(emptyView);
+    const actionListEl = emptyView.actionListEl;
     if (!actionListEl) {
       return;
     }
@@ -422,7 +428,7 @@ export default class AboutBlank extends Plugin {
 
     emptyLeaves.forEach((leaf) => {
       const emptyView = leaf.view as UnsafeEmptyView;
-      const actionListEl = this.getActionListEl(emptyView);
+      const actionListEl = emptyView.actionListEl;
       const container = actionListEl?.closest('.empty-state-container');
       this.cleanupRenderedNewTab(emptyView, container instanceof HTMLElement ? container : null);
     });
@@ -431,7 +437,7 @@ export default class AboutBlank extends Plugin {
     if (this.pluginReady && this.shouldCustomizeNewTab()) {
       emptyLeaves.forEach((leaf) => {
         const emptyView = leaf.view as UnsafeEmptyView;
-        const actionListEl = this.getActionListEl(emptyView);
+        const actionListEl = emptyView.actionListEl;
         if (!actionListEl) return;
         const container = actionListEl.closest('.empty-state-container');
         this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
@@ -457,15 +463,15 @@ export default class AboutBlank extends Plugin {
 
   private addButtonsEventHandler = (): void => {
     const leaf = this.app.workspace.getMostRecentLeaf();
-    if (leaf?.view?.getViewType() === UNSAFE_VIEW_TYPES.empty) {
-      this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
+    if (leaf?.view?.getViewType() !== UNSAFE_VIEW_TYPES.empty) {
+      return;
     }
-    this.renderAllPendingNewTabs();
+    this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
   };
 
   private addButtonsToNewTab = (emptyView: UnsafeEmptyView): void => {
     try {
-      const emptyActionListEl = this.getActionListEl(emptyView);
+      const emptyActionListEl = emptyView.actionListEl;
       const childElements = emptyActionListEl
         ? Array.from(emptyActionListEl.children) as HTMLElement[]
         : null;
@@ -480,12 +486,8 @@ export default class AboutBlank extends Plugin {
         return;
       }
 
-      // rebuildView() 复用容器元素，about-blank-ready 可能残留但按钮已清除
       if (container?.classList.contains('about-blank-ready')) {
-        if (emptyActionListEl.querySelector(`.${CSS_CLASSES.aboutBlankContainer}`)) {
-          return;
-        }
-        container.classList.remove('about-blank-ready', 'about-blank-managed');
+        return;
       }
 
       if (this.alreadyAdded(childElements)) {
@@ -514,39 +516,21 @@ export default class AboutBlank extends Plugin {
 
   // 插件就绪后，统一渲染所有等待中的新标签页
   private renderAllPendingNewTabs = (): void => {
-    if (!this.pluginReady) return;
     const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
-    if (emptyLeaves.length === 0) return;
     emptyLeaves.forEach((leaf) => {
       const emptyView = leaf.view as UnsafeEmptyView;
-      const actionListEl = this.getActionListEl(emptyView);
+      const actionListEl = emptyView.actionListEl;
       if (!actionListEl) return;
       const container = actionListEl.closest('.empty-state-container');
-      // about-blank-ready 可能在 rebuildView() 后残留（容器元素被复用），
-      // 需校验按钮是否实际存在
-      if (container?.classList.contains('about-blank-ready')) {
-        if (actionListEl.querySelector(`.${CSS_CLASSES.aboutBlankContainer}`)) {
-          return;
-        }
-        // 容器有 ready 标记但按钮不存在 = rebuildView 复用容器，强制重新渲染
-        container.classList.remove('about-blank-ready', 'about-blank-managed');
-      }
+      // 已经渲染过的跳过
+      if (container?.classList.contains('about-blank-ready')) return;
       this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
     });
   };
 
-  // rebuildView() 后 view.actionListEl 可能返回 null（属性未更新），
-  // 统一用此方法获取：优先 view 属性，为 null 时从 DOM 查询兜底
-  private getActionListEl = (emptyView: UnsafeEmptyView): HTMLElement | null => {
-    return (emptyView.actionListEl as HTMLElement | null)
-      ?? (emptyView as unknown as { containerEl: HTMLElement }).containerEl
-        ?.querySelector('.empty-state-action-list')
-      ?? null;
-  };
-
   // 统一渲染：Logo + 统计 + 搜索框 + 按钮 + 热力图，按用户要求从上到下排列
   private renderNewTabContent = (emptyView: UnsafeEmptyView, container: HTMLElement | null): void => {
-    const emptyActionListEl = this.getActionListEl(emptyView);
+    const emptyActionListEl = emptyView.actionListEl;
     if (!emptyActionListEl) return;
 
     if (!this.shouldCustomizeNewTab()) {
@@ -950,6 +934,7 @@ export default class AboutBlank extends Plugin {
 
     this.settings.actions = normalizeActions(this.settings.actions);
     this.settings.customStats = normalizeCustomStatDefinitions(this.settings.customStats);
+    this.settings.dateStats = normalizeDateStatDefinitions(this.settings.dateStats);
 
     return results;
   };
@@ -1016,9 +1001,6 @@ export default class AboutBlank extends Plugin {
           this.globalRenderStats();
         }
 
-        // 完整渲染空标签页自定义内容（统一路径，包含布局设置）
-        this.renderAllPendingNewTabs();
-
         // 重置处理状态
         setTimeout(() => {
           isProcessingLeafChange = false;
@@ -1072,9 +1054,6 @@ export default class AboutBlank extends Plugin {
                 this.globalRenderHeatmap();
               }
               
-              // 新标签页也触发完整渲染（按钮/搜索/布局）
-              this.renderAllPendingNewTabs();
-              
               // 重置处理状态
               setTimeout(() => {
                 isProcessing = false;
@@ -1097,9 +1076,6 @@ export default class AboutBlank extends Plugin {
               if (this.settings.showStats && this.globalRenderStats) {
                 this.globalRenderStats();
               }
-              
-              // 触发完整渲染（按钮/搜索/布局）
-              this.renderAllPendingNewTabs();
               
               // 重置处理状态
               setTimeout(() => {
@@ -1377,17 +1353,6 @@ export default class AboutBlank extends Plugin {
     return this.getLoadedFiles().length;
   };
 
-  // 计算使用天数
-  calculateUsageDays = (): number => {
-    if (!this.settings.obsidianStartDate) return 0;
-    
-    const startDate = new Date(this.settings.obsidianStartDate);
-    const today = new Date();
-    const days = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    
-    return days >= 0 ? days : 0;
-  };
-
   // 计算自定义统计项目的文件数量
   calculateCustomStatCount = (stat: CustomStat): number => {
     const allFiles = this.getLoadedFiles();
@@ -1419,9 +1384,6 @@ export default class AboutBlank extends Plugin {
         
         // 基础统计项目（根据开关过滤）
         const baseStats: StatItem[] = [];
-        if (this.settings.showUsageDays) {
-          baseStats.push({ id: 'usage-days', label: "使用天数", value: this.calculateUsageDays() });
-        }
         if (this.settings.showFileCount) {
           baseStats.push({ id: 'file-count', label: "文件数量", value: this.calculateTotalFileCount() });
         }
@@ -1432,12 +1394,20 @@ export default class AboutBlank extends Plugin {
         // 自定义统计项目
         const customStatsItems: StatItem[] = (this.settings.customStats || []).map((stat, index) => ({
           id: `custom-${index}`,
-          label: stat.displayName || findFirstCustomStatCondition(toCustomStatFilterGroup(stat))?.value || `统计项目${index + 1}`,
+          label: stat.displayName || findFirstCustomStatCondition(toCustomStatFilterGroup(stat))?.value || `文件统计${index + 1}`,
           value: this.calculateCustomStatCount(stat)
         }));
 
+        // 日期统计项目
+        const dateStatsItems: StatItem[] = (this.settings.dateStats || []).map((stat, index) => ({
+          id: `date-${index}`,
+          label: stat.title || `日期统计${index + 1}`,
+          value: calcDateStatValue(stat),
+          dateStatType: stat.type,
+        }));
+
         // 合并所有统计项目并缓存
-        this.statsCache = [...baseStats, ...customStatsItems];
+        this.statsCache = [...baseStats, ...customStatsItems, ...dateStatsItems];
         this.statsCacheTimestamp = now;
         return this.statsCache;
       };
@@ -1461,27 +1431,28 @@ export default class AboutBlank extends Plugin {
         
         // 获取统计数据（使用类级别缓存）
         const allStats = getStatsData();
-        
-        // 获取排序后的统计项目
-        const getOrderedStats = () => {
-          // 如果没有设置顺序，使用默认顺序
-          if (!this.settings.statOrder || this.settings.statOrder.length === 0) {
+
+        // 获取排序后的统计项目（所有统计混合排序）
+        const getOrderedStats = (): StatItem[] => {
+          // 合并两种排序：常规统计用 statOrder，日期统计用 dateStatOrder
+          const regularIds = this.settings.statOrder || [];
+          const dateIds = this.settings.dateStatOrder || [];
+          const fullOrder = [...regularIds, ...dateIds];
+
+          if (fullOrder.length === 0) {
             return allStats;
           }
-          
-          // 根据保存的顺序排序，同时包含新添加的统计项目
-          const orderedStats = this.settings.statOrder
+
+          const ordered = fullOrder
             .map(id => allStats.find(stat => stat.id === id))
-            .filter(stat => stat); // 过滤掉不存在的项目
-          
-          // 添加不在排序数组中的新统计项目
-          const newStats = allStats.filter(stat => !this.settings.statOrder.includes(stat.id));
-          
-          return [...orderedStats, ...newStats];
+            .filter((stat): stat is StatItem => stat !== undefined);
+
+          const newStats = allStats.filter(stat => !fullOrder.includes(stat.id));
+          return [...ordered, ...newStats];
         };
-        
+
         const orderedStats = getOrderedStats();
-        
+
         if (this.settings.logoEnabled) {
           // Logo 模式：浮动气泡布局
           this.renderStatsBubbleMode(emptyLeaves, orderedStats);
@@ -1537,7 +1508,7 @@ export default class AboutBlank extends Plugin {
     }
   };
 
-  private renderStatsBubbleMode = (emptyLeaves: NodeListOf<Element>, orderedStats: Array<{id: string; label: string; value: number | string} | undefined>): void => {
+  private renderStatsBubbleMode = (emptyLeaves: NodeListOf<Element>, orderedStats: Array<StatItem | undefined>): void => {
     emptyLeaves.forEach(leaf => {
       const container = leaf.querySelector('.empty-state-container') as HTMLElement;
       if (!container) return;
@@ -1584,6 +1555,9 @@ export default class AboutBlank extends Plugin {
 
         const bubble = document.createElement('div');
         bubble.className = isLeft ? 'about-blank-stats-bubble-left' : 'about-blank-stats-bubble-right';
+        if (stat.dateStatType) {
+          bubble.classList.add('is-date-stat', stat.dateStatType === 'anniversary' ? 'is-anniversary' : 'is-countdown');
+        }
         bubble.setAttribute('data-column', columnIndex.toString());
         bubble.setAttribute('draggable', 'true');
         bubble.setAttribute('data-stat-id', stat.id);
@@ -1668,7 +1642,7 @@ export default class AboutBlank extends Plugin {
     });
   };
 
-  private renderStatsInlineMode = (emptyLeaves: NodeListOf<Element>, orderedStats: Array<{id: string; label: string; value: number | string} | undefined>): void => {
+  private renderStatsInlineMode = (emptyLeaves: NodeListOf<Element>, orderedStats: Array<StatItem | undefined>): void => {
     emptyLeaves.forEach(leaf => {
       const container = leaf.querySelector('.empty-state-container') as HTMLElement;
       if (!container) return;
@@ -1686,6 +1660,9 @@ export default class AboutBlank extends Plugin {
         if (!stat) return;
         const item = document.createElement('div');
         item.className = 'about-blank-stats-inline-item';
+        if (stat.dateStatType) {
+          item.classList.add('is-date-stat', stat.dateStatType === 'anniversary' ? 'is-anniversary' : 'is-countdown');
+        }
         item.setAttribute('draggable', 'true');
         item.setAttribute('data-stat-id', stat.id);
 

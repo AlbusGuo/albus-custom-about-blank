@@ -372,3 +372,190 @@
     left: calc(50% + var(--about-blank-logo-size) / 2 + 10px);
   }
 }
+
+/* =========================================================================
+               日期统计 — 气泡微区分 / 内联卡片颜色覆盖
+   ========================================================================= */
+
+/* ---- 气泡模式：标准气泡 + 颜色微区分 ---- */
+
+.about-blank-stats-bubble-left.is-date-stat,
+.about-blank-stats-bubble-right.is-date-stat {
+  background: var(--background-primary);
+  border-radius: 18px;
+  padding: 6px 14px 6px 12px;
+}
+
+.about-blank-stats-bubble-left.is-date-stat::after {
+  border-color: transparent transparent transparent var(--background-primary);
+}
+
+.about-blank-stats-bubble-right.is-date-stat::after {
+  border-color: transparent var(--background-primary) transparent transparent;
+}
+
+.about-blank-stats-bubble-left.is-anniversary .about-blank-stats-bubble-label,
+.about-blank-stats-bubble-right.is-anniversary .about-blank-stats-bubble-label {
+  color: #e55c5c;
+}
+
+.about-blank-stats-bubble-left.is-countdown .about-blank-stats-bubble-label,
+.about-blank-stats-bubble-right.is-countdown .about-blank-stats-bubble-label {
+  color: #5b9bd5;
+}
+
+.about-blank-stats-bubble-left.is-date-stat .about-blank-stats-bubble-value,
+.about-blank-stats-bubble-right.is-date-stat .about-blank-stats-bubble-value {
+  font-weight: 700;
+}
+
+/* ---- 内联卡片模式：保留文件统计卡片结构，背景色 + 光环颜色区分 ---- */
+
+/* 日期统计背景与其他一致 */
+.about-blank-stats-inline-item.is-anniversary,
+.about-blank-stats-inline-item.is-countdown {
+  background: var(--background-primary);
+}
+
+/* 光环颜色匹配文字色 */
+.about-blank-stats-inline-item.is-anniversary::before {
+  background: conic-gradient(
+    from 250deg at 50% 50%,
+    #e55c5c 0deg,
+    rgba(229, 92, 92, 0.4) var(--_spread),
+    transparent var(--_spread)
+  ) !important;
+}
+
+.about-blank-stats-inline-item.is-countdown::before {
+  background: conic-gradient(
+    from 250deg at 50% 50%,
+    #5b9bd5 0deg,
+    rgba(91, 155, 213, 0.4) var(--_spread),
+    transparent var(--_spread)
+  ) !important;
+}
+
+.about-blank-stats-inline-item.is-anniversary .about-blank-stats-inline-value {
+  color: #e55c5c;
+}
+
+.about-blank-stats-inline-item.is-countdown .about-blank-stats-inline-value {
+  color: #5b9bd5;
+}
+
+.about-blank-stats-inline-item.is-anniversary .about-blank-stats-inline-label {
+  color: #d44a4a;
+}
+
+.about-blank-stats-inline-item.is-countdown .about-blank-stats-inline-label {
+  color: #4a8cc7;
+}
+
+/* 日期统计 hover 阴影匹配 */
+.about-blank-stats-inline-item.is-anniversary:hover {
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.14),
+    0 0 24px rgba(229, 92, 92, 0.2);
+}
+
+.about-blank-stats-inline-item.is-countdown:hover {
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.14),
+    0 0 24px rgba(91, 155, 213, 0.2);
+}
+
+/* 日期统计拖拽阴影匹配 */
+.about-blank-stats-inline-item.is-anniversary.about-blank-stats-inline-drag-over {
+  box-shadow:
+    0 0 0 2px rgba(229, 92, 92, 0.5),
+    0 8px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+.about-blank-stats-inline-item.is-countdown.about-blank-stats-inline-drag-over {
+  box-shadow:
+    0 0 0 2px rgba(91, 155, 213, 0.5),
+    0 8px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* 日期统计底部辉光匹配 */
+.about-blank-stats-inline-item.is-anniversary::after {
+  background: radial-gradient(ellipse at center, rgba(229, 92, 92, 0.12), transparent 70%);
+}
+
+.about-blank-stats-inline-item.is-countdown::after {
+  background: radial-gradient(ellipse at center, rgba(91, 155, 213, 0.12), transparent 70%);
+}
+
+/* =========================================================================
+                  日期统计编辑器样式
+   ========================================================================= */
+
+.about-blank-date-stat-editor-modal-shell {
+  max-width: 520px;
+}
+
+.about-blank-date-stat-editor-modal {
+  padding: 20px 24px;
+}
+
+.about-blank-date-stat-editor-meta-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  align-items: flex-end;
+}
+
+.about-blank-date-stat-editor-inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.about-blank-date-stat-editor-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.about-blank-date-stat-editor-control {
+  width: 100%;
+}
+
+.about-blank-date-stat-editor-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.about-blank-date-stat-editor-input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.about-blank-date-stat-editor-select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.about-blank-date-stat-editor-select:focus {
+  border-color: var(--interactive-accent);
+}
