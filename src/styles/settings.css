@@ -1,10 +1,23 @@
+/* =============================================================================
+ *   设置标签页布局 — 完全复刻 mathcraft 的固定标签栏 + 可滚动内容区结构
+ * ============================================================================= */
+
+/* Root container — flex column fills the settings pane */
+.about-blank-settings-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Fixed tab bar at top */
 .about-blank-settings-tabs {
   display: flex;
   justify-content: flex-start;
   border-bottom: 1px solid var(--background-modifier-border);
   overflow-x: auto;
   padding: 0;
-  margin: 0 0 16px;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .about-blank-settings-tabs::-webkit-scrollbar {
@@ -36,8 +49,15 @@
   border-bottom-color: var(--interactive-accent);
 }
 
+/* Scrollable content area */
+.about-blank-settings-scroll {
+  flex: 1 1 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .about-blank-settings-content {
-  padding-top: 0;
+  padding-top: 16px;
 }
 
 .about-blank-settings-content .setting-group + .setting-item-heading {

@@ -267,6 +267,7 @@ export const defaultSettingsClone = (): AboutBlankSettings => {
 
 export class AboutBlankSettingTab extends PluginSettingTab {
   plugin: AboutBlank;
+  contentEl!: HTMLElement;
   icon: string = 'app-window';
   private draggedIndex: number | null = null;
   private customStatEditorModal: CustomStatEditorModal | null = null;
@@ -293,10 +294,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
 
   display = (): void => {
     try {
-      this.containerEl.empty();
-      this.containerEl.addClass('about-blank-setting-ui');
+      const { containerEl } = this;
 
-      // 创建标签页导航
+      containerEl.empty();
+      containerEl.addClass('about-blank-settings-root');
+
+      // 创建标签页导航 — 固定在顶部
       const tabNames = ["shortcuts", "logo", "stats", "heatmap"];
       const tabLabels: Record<string, string> = {
         shortcuts: "快捷方式",
@@ -305,24 +308,23 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         heatmap: "热力图"
       };
 
-      const tabsEl = this.containerEl.createDiv({ cls: "about-blank-settings-tabs" });
+      const tabsEl = containerEl.createDiv({ cls: "about-blank-settings-tabs" });
       for (const tabName of tabNames) {
-        const tab = tabsEl.createDiv({
-          cls: "about-blank-settings-tab"
-            + (this.plugin.settings.settingsTab === tabName ? " is-active" : "")
-        });
+        const tab = tabsEl.createDiv({ cls: "about-blank-settings-tab" });
+        if (this.plugin.settings.settingsTab === tabName) {
+          tab.classList.add('is-active');
+        }
         tab.setText(tabLabels[tabName]);
         tab.addEventListener("click", () => {
-          void (async () => {
-            this.plugin.settings.settingsTab = tabName;
-            await this.plugin.saveSettings();
-            this.display();
-          })();
+          this.plugin.settings.settingsTab = tabName;
+          this.plugin.saveSettings();
+          this.display();
         });
       }
 
-      // 创建内容区域容器
-      this.containerEl.createDiv({ cls: "about-blank-settings-content" });
+      // 可滚动内容区域
+      const scrollEl = containerEl.createDiv({ cls: "about-blank-settings-scroll" });
+      this.contentEl = scrollEl.createDiv({ cls: "about-blank-settings-content" }) as HTMLDivElement;
       this.renderCurrentTab();
     } catch (error) {
       loggerOnError(error, "Error in settings.\n(About Blank)");
@@ -333,7 +335,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
    * 渲染当前选择的标签页内容
    */
   renderCurrentTab = (): void => {
-    const contentEl = this.containerEl.querySelector('.about-blank-settings-content');
+    const contentEl = this.contentEl;
     if (!contentEl) return;
 
     const activeActionIndex = this.plugin.settings.settingsTab === "shortcuts"
