@@ -111,6 +111,7 @@ export interface AboutBlankSettings {
   showStorageSize: boolean;
   obsidianStartDate: string;
   heatmapEnabled: boolean;
+  heatmapStyle: "flat" | "isometric";
   heatmapDataSource: string;
   heatmapFrontmatterField: string;
   heatmapColorSegments: Array<{min: number, max: number, color: string}>;
@@ -144,6 +145,7 @@ export const DEFAULT_SETTINGS: AboutBlankSettings = {
   showStorageSize: true,
   obsidianStartDate: "",
   heatmapEnabled: false,
+  heatmapStyle: "flat",
   heatmapDataSource: "frontmatter",
   heatmapFrontmatterField: "created",
   heatmapColorSegments: [
@@ -228,6 +230,9 @@ export const settingsPropTypeCheck: {
   logoSize: (value: unknown) => typeof value === "number" && Number.isFinite(value),
   logoOpacity: (value: unknown) => typeof value === "number" && Number.isFinite(value),
   heatmapEnabled: (value: unknown) => isBool(value),
+  heatmapStyle: (value: unknown) => {
+    return value === "flat" || value === "isometric";
+  },
   heatmapDataSource: (value: unknown) => {
     return typeof value === "string" && ["frontmatter", "fileCreation"].includes(value);
   },
@@ -317,7 +322,9 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         tab.setText(tabLabels[tabName]);
         tab.addEventListener("click", () => {
           this.plugin.settings.settingsTab = tabName;
-          this.plugin.saveSettings();
+          void this.plugin.saveSettingsSilent().catch((error) => {
+            loggerOnError(error, "保存设置页签失败\n(About Blank)");
+          });
           this.display();
         });
       }
@@ -725,7 +732,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     statsGroup.addSetting((showStatsSetting) => {
       showStatsSetting
         .setName("显示统计项目")
-        .setDesc("在新标签页显示文件统计信息")
+        .setDesc("在新标签页显示文件统计信息；可直接拖拽气泡或统计卡片调整顺序")
         .addToggle((toggle) => {
           toggle
             .setValue(this.plugin.settings.showStats)
@@ -742,6 +749,26 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     });
 
     if (this.plugin.settings.showStats) {
+      statsGroup.addSetting((orderSetting) => {
+        orderSetting
+          .setName("统计项目顺序")
+          .setDesc("在新标签页拖拽气泡或统计卡片调整顺序")
+          .addButton((button) => {
+            button
+              .setButtonText("重置顺序")
+              .onClick(async () => {
+                try {
+                  this.plugin.settings.statOrder = [];
+                  this.plugin.settings.dateStatOrder = [];
+                  await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                } catch (error) {
+                  loggerOnError(error, "重置统计项目顺序失败\n(About Blank)");
+                }
+              });
+          });
+      });
+
       // 默认统计项标题
       new Setting(containerEl)
         .setName("默认")
@@ -1476,6 +1503,27 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     });
 
     if (this.plugin.settings.heatmapEnabled) {
+      heatmapGroup.addSetting((styleSetting) => {
+        styleSetting
+          .setName("显示样式")
+          .setDesc("选择经典平面热力图或按每日文件数量显示高度的 3D 等距热力图")
+          .addDropdown((dropdown) => {
+            dropdown
+              .addOption("flat", "平面")
+              .addOption("isometric", "3D 等距")
+              .setValue(this.plugin.settings.heatmapStyle)
+              .onChange(async (value: "flat" | "isometric") => {
+                try {
+                  this.plugin.settings.heatmapStyle = value;
+                  await this.plugin.saveSettings();
+                  this.plugin.refreshAllNewTabs();
+                } catch (error) {
+                  loggerOnError(error, "设置中出现错误\n(About Blank)");
+                }
+              });
+          });
+      });
+
       heatmapGroup.addSetting((dataSourceSetting) => {
         dataSourceSetting
           .setName("数据来源")

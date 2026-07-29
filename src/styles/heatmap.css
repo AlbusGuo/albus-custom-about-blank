@@ -132,6 +132,86 @@
   transform: scale(1);
 }
 
+.about-blank-heatmap-isometric .about-blank-heatmap-charts {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: clamp(130px, 22vh, 210px);
+  min-height: 0;
+  padding: 0 12px;
+  overflow: hidden;
+}
+
+.about-blank-heatmap-isometric .about-blank-heatmap-controls {
+  min-height: 24px;
+  margin-bottom: 0;
+}
+
+.about-blank-heatmap-isometric-svg {
+  display: block;
+  width: min(100%, 760px);
+  height: 100%;
+  overflow: visible;
+}
+
+.about-blank-heatmap-isometric-cell {
+  cursor: pointer;
+  outline: none;
+}
+
+.about-blank-heatmap-isometric-hitbox {
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.about-blank-heatmap-isometric-tooltip-target {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  background: transparent;
+  outline: none;
+}
+
+.about-blank-heatmap-isometric-top,
+.about-blank-heatmap-isometric-left,
+.about-blank-heatmap-isometric-right {
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.about-blank-heatmap-isometric-left {
+  filter: brightness(0.72);
+}
+
+.about-blank-heatmap-isometric-right {
+  filter: brightness(0.5);
+}
+
+.about-blank-heatmap-isometric-cell:hover .about-blank-heatmap-isometric-top,
+.about-blank-heatmap-isometric-cell:focus-within .about-blank-heatmap-isometric-top {
+  filter: brightness(1.15);
+}
+
+.about-blank-heatmap-isometric-cell:hover .about-blank-heatmap-isometric-left,
+.about-blank-heatmap-isometric-cell:focus-within .about-blank-heatmap-isometric-left {
+  filter: brightness(0.86);
+}
+
+.about-blank-heatmap-isometric-cell:hover .about-blank-heatmap-isometric-right,
+.about-blank-heatmap-isometric-cell:focus-within .about-blank-heatmap-isometric-right {
+  filter: brightness(0.64);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-blank-heatmap-isometric-top,
+  .about-blank-heatmap-isometric-left,
+  .about-blank-heatmap-isometric-right {
+    transition: none;
+  }
+}
+
 .about-blank-heatmap-files-modal .modal-content {
   max-width: 600px;
   width: 90vw;
@@ -251,6 +331,11 @@
   .about-blank-heatmap-cell {
     width: 10px;
     height: 10px;
+  }
+
+  .about-blank-heatmap-isometric .about-blank-heatmap-charts {
+    height: clamp(110px, 20vh, 160px);
+    padding: 0 8px;
   }
   
 }

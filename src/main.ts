@@ -5,6 +5,7 @@ import {
   Notice,
   Plugin,
   setIcon,
+  setTooltip,
   type WorkspaceLeaf,
   WorkspaceSplit,
 } from "obsidian";
@@ -107,12 +108,9 @@ export default class AboutBlank extends Plugin {
   // 热力图/统计相关缓存
   private heatmapDataCache: { [key: string]: number } | null = null;
   private heatmapYearCache: { [year: number]: { [key: string]: number } } = {};
-  private heatmapRenderInterval: number | null = null;
-  private heatmapObserver: MutationObserver | null = null;
   private globalRenderHeatmap: (() => void) | null = null;
   private globalRenderStats: (() => void) | null = null;
   private globalRenderStatsImmediate: (() => void) | null = null;
-  private workspaceEventsRegistered = false;
   private logoImageReady = false;
 
   // 初始化状态：backBurner 完成后设为 true
@@ -120,6 +118,10 @@ export default class AboutBlank extends Plugin {
 
   // 嵌入式搜索视图的清理列表
   private embeddedSearchCleanups: Array<(detachLeaf: boolean) => void> = [];
+  private renderedActionLists = new WeakSet<HTMLElement>();
+  private newTabObserver: MutationObserver | null = null;
+  private newTabRenderFrame: number | null = null;
+  private newTabSettleFrames = 0;
 
   async onload() {
     try {
@@ -130,6 +132,15 @@ export default class AboutBlank extends Plugin {
 
       this.registerEvent(
         this.app.workspace.on("layout-change", this.addButtonsEventHandler),
+      );
+      this.registerEvent(
+        this.app.workspace.on("active-leaf-change", this.addButtonsEventHandler),
+      );
+      this.registerEvent(
+        this.app.workspace.on("file-open", this.addButtonsEventHandler),
+      );
+      this.registerEvent(
+        this.app.vault.on("delete", () => this.scheduleNewTabReconcile(4)),
       );
       editStyles.rewriteCssVars.iconTextGap.set(adjustInt(this.settings.iconTextGap));
       if (this.settings.centerActionListVertically) {
@@ -168,21 +179,24 @@ export default class AboutBlank extends Plugin {
       // 标记插件就绪，渲染所有已等待的新标签页
       this.pluginReady = true;
       this.renderAllPendingNewTabs();
+      this.setupNewTabObserver();
+      this.scheduleNewTabReconcile(2);
     } catch (error) {
       loggerOnError(error, "设置加载失败\n(About Blank)");
     }
   };
 
   onunload() {
-    // registerInterval 自动清理定时器
-    this.heatmapRenderInterval = null;
-    // 清理 MutationObserver
-    if (this.heatmapObserver) {
-      this.heatmapObserver.disconnect();
-      this.heatmapObserver = null;
+    if (this.newTabObserver) {
+      this.newTabObserver.disconnect();
+      this.newTabObserver = null;
+    }
+    if (this.newTabRenderFrame !== null) {
+      window.cancelAnimationFrame(this.newTabRenderFrame);
+      this.newTabRenderFrame = null;
     }
     // 清理嵌入式搜索视图
-    this.cleanupEmbeddedSearches(false);
+    this.cleanupEmbeddedSearches(true);
     // 清理 CSS 变量
     const root = document.documentElement;
     root.style.removeProperty('--about-blank-heatmap-enabled');
@@ -363,6 +377,7 @@ export default class AboutBlank extends Plugin {
       return;
     }
 
+    this.renderedActionLists.delete(actionListEl);
     actionListEl.classList.remove('about-blank-card-grid');
     Array.from(actionListEl.children).forEach((child) => {
       const actionEl = child as HTMLElement;
@@ -462,11 +477,7 @@ export default class AboutBlank extends Plugin {
   };
 
   private addButtonsEventHandler = (): void => {
-    const leaf = this.app.workspace.getMostRecentLeaf();
-    if (leaf?.view?.getViewType() !== UNSAFE_VIEW_TYPES.empty) {
-      return;
-    }
-    this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
+    this.scheduleNewTabReconcile(2);
   };
 
   private addButtonsToNewTab = (emptyView: UnsafeEmptyView): void => {
@@ -486,11 +497,7 @@ export default class AboutBlank extends Plugin {
         return;
       }
 
-      if (container?.classList.contains('about-blank-ready')) {
-        return;
-      }
-
-      if (this.alreadyAdded(childElements)) {
+      if (this.renderedActionLists.has(emptyActionListEl)) {
         return;
       }
 
@@ -516,15 +523,88 @@ export default class AboutBlank extends Plugin {
 
   // 插件就绪后，统一渲染所有等待中的新标签页
   private renderAllPendingNewTabs = (): void => {
-    const emptyLeaves = this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty);
-    emptyLeaves.forEach((leaf) => {
-      const emptyView = leaf.view as UnsafeEmptyView;
-      const actionListEl = emptyView.actionListEl;
-      if (!actionListEl) return;
-      const container = actionListEl.closest('.empty-state-container');
-      // 已经渲染过的跳过
-      if (container?.classList.contains('about-blank-ready')) return;
-      this.renderNewTabContent(emptyView, container instanceof HTMLElement ? container : null);
+    this.reconcileAllNewTabs();
+  };
+
+  private reconcileAllNewTabs = (): void => {
+    if (!this.pluginReady) {
+      return;
+    }
+
+    this.app.workspace.getLeavesOfType(UNSAFE_VIEW_TYPES.empty).forEach((leaf) => {
+      if (!leaf.isDeferred) {
+        this.addButtonsToNewTab(leaf.view as UnsafeEmptyView);
+      }
+    });
+
+    if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
+      this.globalRenderHeatmap();
+    }
+    if (this.settings.showStats && this.globalRenderStatsImmediate) {
+      this.globalRenderStatsImmediate();
+    }
+  };
+
+  private scheduleNewTabReconcile = (settleFrames = 0): void => {
+    this.newTabSettleFrames = Math.max(this.newTabSettleFrames, settleFrames);
+    if (this.newTabRenderFrame !== null) {
+      return;
+    }
+
+    this.newTabRenderFrame = window.requestAnimationFrame(() => {
+      this.newTabRenderFrame = null;
+      this.reconcileAllNewTabs();
+
+      if (this.newTabSettleFrames > 0) {
+        this.newTabSettleFrames -= 1;
+        this.scheduleNewTabReconcile();
+      }
+    });
+  };
+
+  private setupNewTabObserver = (): void => {
+    this.newTabObserver?.disconnect();
+    this.newTabObserver = new MutationObserver((mutations) => {
+      let shouldReconcile = false;
+
+      for (const mutation of mutations) {
+        if (mutation.type !== 'childList') {
+          continue;
+        }
+
+        const target = mutation.target instanceof HTMLElement
+          ? mutation.target
+          : mutation.target.parentElement;
+
+        if (
+          target?.classList.contains('empty-state-action-list')
+          && mutation.removedNodes.length > 0
+        ) {
+          this.renderedActionLists.delete(target);
+        }
+
+        if (
+          target?.closest('.empty-state-container, .workspace-leaf-content[data-type="empty"]')
+          || Array.from(mutation.addedNodes).concat(Array.from(mutation.removedNodes)).some((node) => (
+            node instanceof HTMLElement
+            && (
+              node.matches('.empty-state-container, .workspace-leaf-content[data-type="empty"]')
+              || node.querySelector('.empty-state-container, .workspace-leaf-content[data-type="empty"]')
+            )
+          ))
+        ) {
+          shouldReconcile = true;
+        }
+      }
+
+      if (shouldReconcile) {
+        this.scheduleNewTabReconcile(2);
+      }
+    });
+
+    this.newTabObserver.observe(this.app.workspace.containerEl, {
+      childList: true,
+      subtree: true,
     });
   };
 
@@ -550,6 +630,7 @@ export default class AboutBlank extends Plugin {
 
     // 如果已添加过自定义按钮则跳过
     if (this.alreadyAdded(childElements)) {
+      this.renderedActionLists.add(emptyActionListEl);
       if (container) {
         container.classList.remove('about-blank-loading');
         const loaderEl = container.querySelector('.about-blank-loader');
@@ -595,6 +676,7 @@ export default class AboutBlank extends Plugin {
       if (loaderEl) loaderEl.remove();
       container.classList.add('about-blank-ready');
     }
+    this.renderedActionLists.add(emptyActionListEl);
   };
 
   private addLucideIconToDefaultAction = (actionEl: HTMLElement, cardLayout: boolean): void => {
@@ -768,14 +850,56 @@ export default class AboutBlank extends Plugin {
 
       const leaf = this.app.workspace.createLeafInParent(rootSplit as WorkspaceSplit, 0);
       leaf.setPinned(true);
+      let disposed = false;
+      let inputWatchTimer: number | null = null;
+      let nativeInput: HTMLInputElement | null = null;
+      let onDocClick: ((event: MouseEvent) => void) | null = null;
+
+      const expandSearchPanel = () => {
+        placeholderEl.classList.add("is-expanded");
+      };
+      const onNativeInputKeyDown = (event: KeyboardEvent) => {
+        if (event.key === "Escape") {
+          placeholderEl.classList.remove("is-expanded");
+          nativeInput?.blur();
+        }
+      };
+      const cleanupEmbeddedSearch = (detachLeaf: boolean) => {
+        if (disposed) {
+          return;
+        }
+        disposed = true;
+        if (inputWatchTimer !== null) {
+          window.clearTimeout(inputWatchTimer);
+          inputWatchTimer = null;
+        }
+        if (onDocClick) {
+          document.removeEventListener("click", onDocClick, true);
+        }
+        panelEl.removeEventListener("focusin", expandSearchPanel);
+        panelEl.removeEventListener("pointerdown", expandSearchPanel);
+        nativeInput?.removeEventListener("focus", expandSearchPanel);
+        nativeInput?.removeEventListener("keydown", onNativeInputKeyDown);
+        if (detachLeaf) {
+          leaf.detach();
+        }
+        placeholderEl.remove();
+      };
+      this.embeddedSearchCleanups.push(cleanupEmbeddedSearch);
 
       void leaf.setViewState({
         type: "search",
         active: false,
         state: { query: "", triggerBySelf: true },
       }).then(() => {
+        if (disposed) {
+          return;
+        }
         workspaceWithLayoutChange.onLayoutChange();
-        setTimeout(() => {
+        window.setTimeout(() => {
+          if (disposed) {
+            return;
+          }
           const searchView = leaf.view as UnsafeStatefulView | null;
           if (searchView) {
             void Promise.resolve(searchView.setState(
@@ -789,59 +913,46 @@ export default class AboutBlank extends Plugin {
         }, 0);
       }).catch((error: unknown) => {
         this.restoreActiveLeaf(previousActiveLeaf);
+        cleanupEmbeddedSearch(true);
         loggerOnError(error, "初始化嵌入搜索视图失败\n(About Blank)");
       });
 
       // 监听原生搜索输入框，控制展开/折叠
       const watchNativeInput = () => {
-        const nativeInput = panelEl.querySelector<HTMLInputElement>('.search-input-container input');
-        if (!nativeInput) {
-          setTimeout(watchNativeInput, 100);
+        if (disposed) {
           return;
         }
+        if (!placeholderEl.isConnected) {
+          cleanupEmbeddedSearch(true);
+          return;
+        }
+        nativeInput = panelEl.querySelector<HTMLInputElement>('.search-input-container input');
+        if (!nativeInput) {
+          inputWatchTimer = window.setTimeout(watchNativeInput, 100);
+          return;
+        }
+        inputWatchTimer = null;
 
-          const expandSearchPanel = () => {
-          placeholderEl.classList.add("is-expanded");
-        };
+        // 光标进入输入框前后都立即展开，避免折叠态下出现已聚焦但仍未展开的瞬间。
+        panelEl.addEventListener("focusin", expandSearchPanel);
+        panelEl.addEventListener("pointerdown", expandSearchPanel);
+        nativeInput.addEventListener("focus", expandSearchPanel);
 
-          // 光标进入输入框前后都立即展开，避免折叠态下出现已聚焦但仍未展开的瞬间。
-          panelEl.addEventListener("focusin", expandSearchPanel);
-          panelEl.addEventListener("pointerdown", expandSearchPanel);
-          nativeInput.addEventListener("focus", expandSearchPanel);
-
-          if (document.activeElement === nativeInput) {
-            expandSearchPanel();
-          }
+        if (document.activeElement === nativeInput) {
+          expandSearchPanel();
+        }
 
         // 点击面板外部收起
-        const onDocClick = (e: MouseEvent) => {
-          if (!placeholderEl.contains(e.target as Node)) {
+        onDocClick = (event: MouseEvent) => {
+          if (!placeholderEl.contains(event.target as Node)) {
             placeholderEl.classList.remove("is-expanded");
           }
         };
         document.addEventListener("click", onDocClick, true);
 
-        const onNativeInputKeyDown = (e: KeyboardEvent) => {
-          if (e.key === "Escape") {
-            placeholderEl.classList.remove("is-expanded");
-            nativeInput.blur();
-          }
-        };
         nativeInput.addEventListener("keydown", onNativeInputKeyDown);
-
-        this.embeddedSearchCleanups.push((detachLeaf: boolean) => {
-          document.removeEventListener("click", onDocClick, true);
-          panelEl.removeEventListener("focusin", expandSearchPanel);
-          panelEl.removeEventListener("pointerdown", expandSearchPanel);
-          nativeInput.removeEventListener("focus", expandSearchPanel);
-          nativeInput.removeEventListener("keydown", onNativeInputKeyDown);
-          if (detachLeaf) {
-            leaf.detach();
-          }
-          placeholderEl.remove();
-        });
       };
-      setTimeout(watchNativeInput, 300);
+      inputWatchTimer = window.setTimeout(watchNativeInput, 300);
     } catch (error) {
       loggerOnError(error, "嵌入搜索框失败\n(About Blank)");
     }
@@ -949,194 +1060,14 @@ export default class AboutBlank extends Plugin {
       if (this.settings.heatmapEnabled) {
         // Generate heatmap data and render
         this.generateHeatmapData();
-        
-        // 设置定期检查和渲染热力图
-        this.setupHeatmapPeriodicRender();
-        
-        // 添加额外的渲染尝试，确保在标签页切换时也能显示
-        this.registerWorkspaceEvents();
       } else {
         // Remove heatmap containers when disabled
         const heatmapContainers = document.querySelectorAll('.about-blank-heatmap-container');
         heatmapContainers.forEach(container => container.remove());
-        
-        // 清除定期渲染
-        if (this.heatmapRenderInterval) {
-          clearInterval(this.heatmapRenderInterval);
-          this.heatmapRenderInterval = null;
-        }
       }
     } catch (error) {
       loggerOnError(error, "应用热力图设置失败\n(About Blank)");
     }
-  };
-
-  registerWorkspaceEvents = (): void => {
-    if (this.workspaceEventsRegistered) return;
-    this.workspaceEventsRegistered = true;
-
-    // 监听工作区事件，确保在标签页切换时也能渲染热力图和统计气泡
-    let leafChangeTimeout: NodeJS.Timeout | null = null;
-    let isProcessingLeafChange = false;
-    this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
-      if (isProcessingLeafChange) return; // 如果正在处理，跳过本次变化
-
-      // 清除之前的超时，避免重复触发
-      if (leafChangeTimeout) {
-        clearTimeout(leafChangeTimeout);
-      }
-
-      leafChangeTimeout = setTimeout(() => {
-        if (isProcessingLeafChange) return; // 再次检查处理状态
-
-        isProcessingLeafChange = true;
-
-        // 渲染热力图
-        if (this.settings.heatmapEnabled && this.globalRenderHeatmap && this.heatmapDataCache) {
-          this.globalRenderHeatmap();
-        }
-
-        // 渲染统计气泡（使用防抖）- 添加 logoEnabled 检查
-        if (this.settings.showStats && this.globalRenderStats) {
-          this.globalRenderStats();
-        }
-
-        // 重置处理状态
-        setTimeout(() => {
-          isProcessingLeafChange = false;
-        }, 300);
-      }, 150);
-    }));
-    
-    // 使用优化的MutationObserver监听DOM变化
-    const workspaceContainer = document.querySelector('.workspace');
-    if (workspaceContainer) {
-      let observerTimeout: NodeJS.Timeout | null = null;
-      let isProcessing = false; // 添加处理状态标志
-      
-      const observer = new MutationObserver((mutations) => {
-        if (isProcessing) return; // 如果正在处理，跳过本次变化
-        
-        let shouldRerender = false;
-        let hasNewEmptyLeaf = false;
-        
-        mutations.forEach((mutation) => {
-          if (mutation.type === 'childList') {
-            // 只检查直接添加的空标签页，不检查子树
-            mutation.addedNodes.forEach((node) => {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                const element = node as Element;
-                if (element.classList.contains('workspace-leaf-content') && 
-                    element.getAttribute('data-type') === 'empty') {
-                  shouldRerender = true;
-                  hasNewEmptyLeaf = true;
-                }
-              }
-            });
-          }
-        });
-        
-        if (shouldRerender) {
-          // 清除之前的超时，避免重复触发
-          if (observerTimeout) {
-            clearTimeout(observerTimeout);
-          }
-          
-          // 性能优化：对新标签页使用 requestAnimationFrame 立即渲染
-          if (hasNewEmptyLeaf) {
-            requestAnimationFrame(() => {
-              if (isProcessing) return;
-              isProcessing = true;
-              
-              // 渲染热力图
-              if (this.settings.heatmapEnabled && 
-                  this.globalRenderHeatmap && this.heatmapDataCache) {
-                this.globalRenderHeatmap();
-              }
-              
-              // 重置处理状态
-              setTimeout(() => {
-                isProcessing = false;
-              }, 300);
-            });
-          } else {
-            // 非新标签页的情况，使用防抖
-            observerTimeout = setTimeout(() => {
-              if (isProcessing) return;
-              
-              isProcessing = true;
-              
-              // 渲染热力图
-              if (this.settings.heatmapEnabled && 
-                  this.globalRenderHeatmap && this.heatmapDataCache) {
-                this.globalRenderHeatmap();
-              }
-              
-              // 渲染统计气泡
-              if (this.settings.showStats && this.globalRenderStats) {
-                this.globalRenderStats();
-              }
-              
-              // 重置处理状态
-              setTimeout(() => {
-                isProcessing = false;
-              }, 500);
-            }, 300);
-          }
-        }
-      });
-      
-      // 只观察工作区容器的直接子元素变化，不观察子树
-      observer.observe(workspaceContainer, {
-        childList: true
-      });
-      
-      // 保存observer引用以便清理
-      this.heatmapObserver = observer;
-    }
-  };
-
-  setupHeatmapPeriodicRender = (): void => {
-    // 清除现有的定时器
-    if (this.heatmapRenderInterval) {
-      clearInterval(this.heatmapRenderInterval);
-    }
-    
-    // 立即执行一次
-    if (this.globalRenderHeatmap && this.heatmapDataCache) {
-      this.globalRenderHeatmap();
-    }
-    
-    // 添加防抖机制，避免频繁渲染
-    let lastRenderTime = 0;
-    const renderDebounceTime = 1000; // 1秒防抖
-    
-    // 设置定期检查和渲染，但降低频率并添加条件检查
-    this.heatmapRenderInterval = this.registerInterval(window.setInterval(() => {
-      const now = Date.now();
-      
-      // 检查是否在防抖期内
-      if (now - lastRenderTime < renderDebounceTime) {
-        return;
-      }
-      
-      // 性能优化：检查所有空标签页
-      const emptyLeaves = document.querySelectorAll('.workspace-leaf-content[data-type="empty"]');
-      
-      // 只在有新标签页时才渲染
-      let needsRender = false;
-      emptyLeaves.forEach((leaf) => {
-        if (!leaf.querySelector('.about-blank-heatmap-container')) {
-          needsRender = true;
-        }
-      });
-      
-      // 如果有新标签页且有缓存的数据，重新渲染
-      if (needsRender && this.globalRenderHeatmap && this.heatmapDataCache) {
-        this.globalRenderHeatmap();
-        lastRenderTime = now;
-      }
-    }, 2000)); // 2秒检查一次
   };
 
   // 获取指定日期的文件列表
@@ -1340,28 +1271,59 @@ export default class AboutBlank extends Plugin {
     }
   };
 
-  // 计算所有文件的总大小（GB）
-  calculateTotalFileSize = (): string => {
-    const allFiles = this.getLoadedFiles();
-    const totalBytes = allFiles.reduce((total, file) => total + file.stat.size, 0);
-    const totalGB = totalBytes / (1024 * 1024 * 1024);
-    return totalGB.toFixed(2);
+  private getCustomStatItemId = (stat: CustomStat, index: number): string => {
+    const stableId = stat.filters.id.trim();
+    return stableId ? `custom-${stableId}` : `custom-${index}`;
   };
 
-  // 计算所有文件的总数
-  calculateTotalFileCount = (): number => {
-    return this.getLoadedFiles().length;
+  private getDateStatItemId = (stat: DateStatDefinition, index: number): string => {
+    const stableId = stat.id.trim();
+    return stableId ? `date-${stableId}` : `date-${index}`;
   };
 
-  // 计算自定义统计项目的文件数量
-  calculateCustomStatCount = (stat: CustomStat): number => {
-    const allFiles = this.getLoadedFiles();
-    return allFiles.filter((file) => {
-      return matchesCustomStatDefinition({
-        file,
-        cache: this.app.metadataCache.getFileCache(file),
-      }, stat);
-    }).length;
+  private resolveLegacyStatOrder = (order: string[]): string[] => {
+    const legacyIdMap = new Map<string, string>();
+    this.settings.customStats.forEach((stat, index) => {
+      legacyIdMap.set(`custom-${index}`, this.getCustomStatItemId(stat, index));
+    });
+    this.settings.dateStats.forEach((stat, index) => {
+      legacyIdMap.set(`date-${index}`, this.getDateStatItemId(stat, index));
+    });
+
+    return Array.from(new Set(order.map((id) => legacyIdMap.get(id) ?? id)));
+  };
+
+  private rerenderStats = (): void => {
+    document.querySelectorAll('.about-blank-stats-bubbles, .about-blank-stats-inline')
+      .forEach((element) => element.remove());
+    this.globalRenderStatsImmediate?.();
+  };
+
+  private swapStats = (
+    draggedStatId: string,
+    targetStatId: string,
+    orderedStats: Array<StatItem | undefined>,
+  ): void => {
+    const currentOrder = orderedStats
+      .filter((stat): stat is StatItem => stat !== undefined)
+      .map((stat) => stat.id);
+    const draggedIndex = currentOrder.indexOf(draggedStatId);
+    const targetIndex = currentOrder.indexOf(targetStatId);
+    if (draggedIndex === -1 || targetIndex === -1) {
+      return;
+    }
+
+    [currentOrder[draggedIndex], currentOrder[targetIndex]] = [
+      currentOrder[targetIndex],
+      currentOrder[draggedIndex],
+    ];
+
+    this.settings.statOrder = currentOrder;
+    this.settings.dateStatOrder = [];
+    this.rerenderStats();
+    void this.saveSettingsSilent().catch((error) => {
+      loggerOnError(error, "保存统计项目顺序失败\n(About Blank)");
+    });
   };
 
   // 创建统计气泡
@@ -1381,26 +1343,34 @@ export default class AboutBlank extends Plugin {
         if (this.statsCache && (now - this.statsCacheTimestamp) < this.STATS_CACHE_DURATION) {
           return this.statsCache;
         }
+
+        const loadedFiles = this.getLoadedFiles();
+        const fileContexts = loadedFiles.map((file) => ({
+          file,
+          cache: this.app.metadataCache.getFileCache(file),
+        }));
         
         // 基础统计项目（根据开关过滤）
         const baseStats: StatItem[] = [];
         if (this.settings.showFileCount) {
-          baseStats.push({ id: 'file-count', label: "文件数量", value: this.calculateTotalFileCount() });
+          baseStats.push({ id: 'file-count', label: "文件数量", value: loadedFiles.length });
         }
         if (this.settings.showStorageSize) {
-          baseStats.push({ id: 'storage-size', label: "存储空间", value: `${this.calculateTotalFileSize()}G` });
+          const totalBytes = loadedFiles.reduce((total, file) => total + file.stat.size, 0);
+          const totalGB = totalBytes / (1024 * 1024 * 1024);
+          baseStats.push({ id: 'storage-size', label: "存储空间", value: `${totalGB.toFixed(2)}G` });
         }
 
         // 自定义统计项目
         const customStatsItems: StatItem[] = (this.settings.customStats || []).map((stat, index) => ({
-          id: `custom-${index}`,
+          id: this.getCustomStatItemId(stat, index),
           label: stat.displayName || findFirstCustomStatCondition(toCustomStatFilterGroup(stat))?.value || `文件统计${index + 1}`,
-          value: this.calculateCustomStatCount(stat)
+          value: fileContexts.filter((context) => matchesCustomStatDefinition(context, stat)).length,
         }));
 
         // 日期统计项目
         const dateStatsItems: StatItem[] = (this.settings.dateStats || []).map((stat, index) => ({
-          id: `date-${index}`,
+          id: this.getDateStatItemId(stat, index),
           label: stat.title || `日期统计${index + 1}`,
           value: calcDateStatValue(stat),
           dateStatType: stat.type,
@@ -1437,7 +1407,7 @@ export default class AboutBlank extends Plugin {
           // 合并两种排序：常规统计用 statOrder，日期统计用 dateStatOrder
           const regularIds = this.settings.statOrder || [];
           const dateIds = this.settings.dateStatOrder || [];
-          const fullOrder = [...regularIds, ...dateIds];
+          const fullOrder = this.resolveLegacyStatOrder([...regularIds, ...dateIds]);
 
           if (fullOrder.length === 0) {
             return allStats;
@@ -1598,40 +1568,7 @@ export default class AboutBlank extends Plugin {
           const draggedStatId = e.dataTransfer?.getData('text/plain');
           const targetStatId = stat.id;
           if (draggedStatId && draggedStatId !== targetStatId) {
-            const currentOrder = this.settings.statOrder.length > 0 ? [...this.settings.statOrder] : orderedStats.map(s => s?.id || '');
-            orderedStats.forEach(s => { if (s && !currentOrder.includes(s.id)) currentOrder.push(s.id); });
-            const draggedIdx = currentOrder.indexOf(draggedStatId);
-            const targetIdx = currentOrder.indexOf(targetStatId);
-            if (draggedIdx !== -1 && targetIdx !== -1) {
-              const temp = currentOrder[draggedIdx];
-              currentOrder[draggedIdx] = currentOrder[targetIdx];
-              currentOrder[targetIdx] = temp;
-              this.settings.statOrder = currentOrder;
-                void this.saveSettingsSilent();
-              // 交换气泡位置
-              const allBubbles = Array.from(statsContainer.querySelectorAll<HTMLElement>('[data-stat-id]'));
-              const draggedBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === draggedStatId);
-              const targetBubble = allBubbles.find(b => b.getAttribute('data-stat-id') === targetStatId);
-              if (draggedBubble && targetBubble) {
-                const dTop = draggedBubble.style.top;
-                draggedBubble.style.top = targetBubble.style.top;
-                targetBubble.style.top = dTop;
-                const dLeft = draggedBubble.classList.contains('about-blank-stats-bubble-left');
-                const tLeft = targetBubble.classList.contains('about-blank-stats-bubble-left');
-                if (dLeft !== tLeft) {
-                  draggedBubble.classList.toggle('about-blank-stats-bubble-left');
-                  draggedBubble.classList.toggle('about-blank-stats-bubble-right');
-                  targetBubble.classList.toggle('about-blank-stats-bubble-left');
-                  targetBubble.classList.toggle('about-blank-stats-bubble-right');
-                }
-                const dCol = draggedBubble.getAttribute('data-column');
-                draggedBubble.setAttribute('data-column', targetBubble.getAttribute('data-column') || '0');
-                targetBubble.setAttribute('data-column', dCol || '0');
-                draggedBubble.style.transition = 'top 0.3s ease';
-                targetBubble.style.transition = 'top 0.3s ease';
-                setTimeout(() => { draggedBubble.style.transition = ''; targetBubble.style.transition = ''; }, 300);
-              }
-            }
+            this.swapStats(draggedStatId, targetStatId, orderedStats);
           }
         });
 
@@ -1703,59 +1640,7 @@ export default class AboutBlank extends Plugin {
           const draggedStatId = e.dataTransfer?.getData('text/plain');
           const targetStatId = stat.id;
           if (draggedStatId && draggedStatId !== targetStatId) {
-            const currentOrder = this.settings.statOrder.length > 0 ? [...this.settings.statOrder] : orderedStats.map(s => s?.id || '');
-            orderedStats.forEach(s => { if (s && !currentOrder.includes(s.id)) currentOrder.push(s.id); });
-            const draggedIdx = currentOrder.indexOf(draggedStatId);
-            const targetIdx = currentOrder.indexOf(targetStatId);
-            if (draggedIdx !== -1 && targetIdx !== -1) {
-              const temp = currentOrder[draggedIdx];
-              currentOrder[draggedIdx] = currentOrder[targetIdx];
-              currentOrder[targetIdx] = temp;
-              this.settings.statOrder = currentOrder;
-                void this.saveSettingsSilent();
-              // FLIP 动画交换位置
-              const allItems = Array.from(inlineContainer.querySelectorAll<HTMLElement>('.about-blank-stats-inline-item'));
-              const draggedEl = allItems.find(el => el.getAttribute('data-stat-id') === draggedStatId);
-              const targetEl = allItems.find(el => el.getAttribute('data-stat-id') === targetStatId);
-              if (draggedEl && targetEl) {
-                // First: 记录当前位置
-                const dRect = draggedEl.getBoundingClientRect();
-                const tRect = targetEl.getBoundingClientRect();
-                // Swap DOM 位置
-                const dNext = draggedEl.nextSibling;
-                const tNext = targetEl.nextSibling;
-                if (dNext === targetEl) {
-                  inlineContainer.insertBefore(targetEl, draggedEl);
-                } else if (tNext === draggedEl) {
-                  inlineContainer.insertBefore(draggedEl, targetEl);
-                } else {
-                  inlineContainer.insertBefore(draggedEl, tNext);
-                  inlineContainer.insertBefore(targetEl, dNext);
-                }
-                // Last: 记录新位置
-                const dRectNew = draggedEl.getBoundingClientRect();
-                const tRectNew = targetEl.getBoundingClientRect();
-                // Invert + Play
-                const dDx = dRect.left - dRectNew.left;
-                const dDy = dRect.top - dRectNew.top;
-                const tDx = tRect.left - tRectNew.left;
-                const tDy = tRect.top - tRectNew.top;
-                draggedEl.style.transition = 'none';
-                draggedEl.style.transform = `translate(${dDx}px, ${dDy}px)`;
-                targetEl.style.transition = 'none';
-                targetEl.style.transform = `translate(${tDx}px, ${tDy}px)`;
-                requestAnimationFrame(() => {
-                  draggedEl.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-                  draggedEl.style.transform = '';
-                  targetEl.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-                  targetEl.style.transform = '';
-                  setTimeout(() => {
-                    draggedEl.style.transition = '';
-                    targetEl.style.transition = '';
-                  }, 300);
-                });
-              }
-            }
+            this.swapStats(draggedStatId, targetStatId, orderedStats);
           }
         });
 
@@ -1850,6 +1735,8 @@ export default class AboutBlank extends Plugin {
     dateCountMap: HeatmapDateCountMap,
   ): void => {
     try {
+      const isIsometric = this.settings.heatmapStyle === 'isometric';
+      heatmapContainer.classList.toggle('about-blank-heatmap-isometric', isIsometric);
       const parentLeaf = heatmapContainer.closest('.workspace-leaf-content[data-type="empty"]');
       
       if (parentLeaf instanceof HTMLElement) {
@@ -1879,11 +1766,11 @@ export default class AboutBlank extends Plugin {
       });
       
       const chartsEl = heatmapContainer.createEl('div', { cls: 'about-blank-heatmap-charts' });
-      
-      const weekTextColumns = chartsEl.createEl('div', { cls: 'about-blank-heatmap-column' });
-      this.renderWeekIndicator(weekTextColumns);
-      
       const contributionData = this.generateContributionData(dateCountMap);
+      const maxContributionCount = Math.max(
+        0,
+        ...contributionData.map((item) => item.count),
+      );
       
       if (contributionData.length > 0) {
         const firstDate = new Date(contributionData[0].date);
@@ -1901,6 +1788,14 @@ export default class AboutBlank extends Plugin {
           });
         }
       }
+
+      if (isIsometric) {
+        this.renderIsometricHeatmap(chartsEl, contributionData, maxContributionCount);
+        return;
+      }
+
+      const weekTextColumns = chartsEl.createEl('div', { cls: 'about-blank-heatmap-column' });
+      this.renderWeekIndicator(weekTextColumns);
       
       let columnEl: HTMLElement | null = null;
       for (let i = 0; i < contributionData.length; i++) {
@@ -1935,8 +1830,8 @@ export default class AboutBlank extends Plugin {
               const color = this.getHeatmapColor(0);
               cellEl.style.backgroundColor = color;
               
-              // 添加 Obsidian 默认 tooltip
-              cellEl.setAttribute('aria-label', `${contributionItem.date}, 0 个文件`);
+              // 使用 Obsidian 官方 tooltip
+              setTooltip(cellEl, `${contributionItem.date}, 0 个文件`, { placement: 'top' });
               
               // 添加点击事件 - 即使没有文件也可以点击查看
               cellEl.addClass('clickable');
@@ -1956,8 +1851,8 @@ export default class AboutBlank extends Plugin {
             const color = this.getHeatmapColor(contributionItem.count);
             cellEl.style.backgroundColor = color;
             
-            // 添加 Obsidian 默认 tooltip
-            cellEl.setAttribute('aria-label', `${contributionItem.date}, ${contributionItem.count} 个文件`);
+            // 使用 Obsidian 官方 tooltip
+            setTooltip(cellEl, `${contributionItem.date}, ${contributionItem.count} 个文件`, { placement: 'top' });
             
             // 添加点击事件
             cellEl.addClass('clickable');
@@ -1973,6 +1868,116 @@ export default class AboutBlank extends Plugin {
     } catch (error) {
       loggerOnError(error, "创建热力图内容失败\n(About Blank)");
     }
+  };
+
+  private renderIsometricHeatmap = (
+    chartsEl: HTMLElement,
+    contributionData: ContributionItem[],
+    maxCount: number,
+  ): void => {
+    const tileHalfWidth = 1.7;
+    const tileWidth = tileHalfWidth * 2;
+    const tileHeight = 2;
+    const maxPillarHeight = 6;
+    const weekCount = Math.max(1, Math.ceil(contributionData.length / 7));
+    const padding = 3;
+    const minX = -6 * tileHalfWidth - padding;
+    const maxX = (weekCount - 1) * tileHalfWidth + tileWidth + padding;
+    const minY = -padding;
+    const maxY = weekCount - 1 + 6 + tileHeight + maxPillarHeight + padding;
+
+    const svgEl = createSvg('svg', {
+      cls: 'about-blank-heatmap-isometric-svg',
+      attr: {
+        viewBox: `${minX} ${minY} ${maxX - minX} ${maxY - minY}`,
+        preserveAspectRatio: 'xMidYMid meet',
+        role: 'img',
+      },
+    });
+
+    contributionData.forEach((item, index) => {
+      if (item.date === '$HOLE$') {
+        return;
+      }
+
+      const weekIndex = Math.floor(index / 7);
+      const dayIndex = index % 7;
+      const ratio = item.count > 0 && maxCount > 0 ? item.count / maxCount : 0;
+      const pillarHeight = ratio * maxPillarHeight;
+      const x = weekIndex * tileHalfWidth - dayIndex * tileHalfWidth;
+      const y = weekIndex + dayIndex + (1 - ratio) * maxPillarHeight;
+      const color = item.count === 0
+        ? 'var(--background-secondary-alt)'
+        : this.getHeatmapColor(item.count);
+      const groupEl = createSvg('g', {
+        cls: 'about-blank-heatmap-isometric-cell',
+        attr: {
+          transform: `translate(${x} ${y})`,
+          'data-date': item.date,
+          'data-count': item.count.toString(),
+        },
+      });
+
+      const topFace = createSvg('path', {
+        cls: 'about-blank-heatmap-isometric-top',
+        attr: {
+          d: `M${tileHalfWidth},${tileHeight} 0,1 ${tileHalfWidth},0 ${tileWidth},1 Z`,
+          fill: color,
+        },
+      });
+      const leftFace = createSvg('path', {
+        cls: 'about-blank-heatmap-isometric-left',
+        attr: {
+          d: `M0,1 ${tileHalfWidth},${tileHeight} ${tileHalfWidth},${tileHeight + pillarHeight} 0,${1 + pillarHeight} Z`,
+          fill: color,
+        },
+      });
+      const rightFace = createSvg('path', {
+        cls: 'about-blank-heatmap-isometric-right',
+        attr: {
+          d: `M${tileHalfWidth},${tileHeight} ${tileWidth},1 ${tileWidth},${1 + pillarHeight} ${tileHalfWidth},${tileHeight + pillarHeight} Z`,
+          fill: color,
+        },
+      });
+
+      const tooltipHitbox = createSvg('foreignObject', {
+        cls: 'about-blank-heatmap-isometric-hitbox',
+        attr: {
+          x: '0',
+          y: '0',
+          width: tileWidth.toString(),
+          height: (tileHeight + pillarHeight).toString(),
+        },
+      });
+      const tooltipTarget = createDiv({
+        cls: 'about-blank-heatmap-isometric-tooltip-target',
+      });
+      tooltipTarget.setAttribute('role', 'button');
+      tooltipTarget.setAttribute('tabindex', '0');
+      tooltipTarget.setAttribute('data-date', item.date);
+      tooltipTarget.setAttribute('data-count', item.count.toString());
+      setTooltip(
+        tooltipTarget,
+        `${item.date}, ${item.count} 个文件`,
+        { placement: 'top' },
+      );
+      tooltipHitbox.appendChild(tooltipTarget);
+      groupEl.append(topFace, leftFace, rightFace, tooltipHitbox);
+      const openFilesModal = (): void => {
+        const files = this.getFilesForDate(item.date);
+        new HeatmapFilesModal(this.app, this, item.date, files).open();
+      };
+      tooltipTarget.addEventListener('click', openFilesModal);
+      tooltipTarget.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openFilesModal();
+        }
+      });
+      svgEl.appendChild(groupEl);
+    });
+
+    chartsEl.appendChild(svgEl);
   };
 
   getHeatmapLevel = (count: number): string => {

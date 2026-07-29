@@ -13,8 +13,8 @@
 
 .workspace-leaf-content[data-type="empty"] .empty-state-container .about-blank-logo {
   display: inline-block;
-  width: var(--about-blank-logo-size, 120px);
-  height: var(--about-blank-logo-size, 120px);
+  width: var(--about-blank-logo-render-size, var(--about-blank-logo-size, 120px));
+  height: var(--about-blank-logo-render-size, var(--about-blank-logo-size, 120px));
   pointer-events: none;
   z-index: 1;
   min-width: 20px;
@@ -84,4 +84,33 @@
 
 .workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
   flex-direction: column;
+}
+
+.workspace-leaf-content[data-type="empty"]:has(.about-blank-heatmap-isometric) {
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workspace-split.mod-root
+  .workspace-leaf-content[data-type="empty"]
+  .empty-state-container.about-blank-managed:has(.about-blank-heatmap-isometric) {
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  justify-content: safe center;
+  gap: clamp(2px, 0.6vh, 8px);
+  padding-block: clamp(4px, 1vh, 12px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.workspace-leaf-content[data-type="empty"]
+  .empty-state-container.logo-top:has(.about-blank-heatmap-isometric) {
+  --about-blank-logo-render-size: min(
+    var(--about-blank-logo-size, 120px),
+    36vh
+  );
 }

@@ -85,17 +85,8 @@ export class HeatmapFilesModal extends Modal {
       });
 
       // 添加点击事件
-      fileItem.addEventListener('click', async () => {
-        try {
-          // 打开文件
-          const leaf = this.app.workspace.getLeaf(false);
-          await leaf.openFile(file);
-          
-          // 关闭模态窗口
-          this.close();
-        } catch (error) {
-          loggerOnError(error, '打开文件失败\n(About Blank)');
-        }
+      fileItem.addEventListener('click', () => {
+        void this.openFile(file);
       });
 
       // 添加悬停效果
@@ -107,6 +98,16 @@ export class HeatmapFilesModal extends Modal {
         }
       });
     });
+  }
+
+  private async openFile(file: TFile): Promise<void> {
+    try {
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+      this.close();
+    } catch (error) {
+      loggerOnError(error, '打开文件失败\n(About Blank)');
+    }
   }
 
   onClose() {

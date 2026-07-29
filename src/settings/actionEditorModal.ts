@@ -201,10 +201,14 @@ export class ActionEditorModal {
       this.app,
       this.options.iconFolder,
       this.options.iconMask,
-      async (selectedIcon: string) => {
-        this.draft.icon = selectedIcon;
-        await this.updateIconPreview();
-        await this.commitChanges();
+      (selectedIcon: string) => {
+        void (async () => {
+          this.draft.icon = selectedIcon;
+          await this.updateIconPreview();
+          await this.commitChanges();
+        })().catch((error) => {
+          loggerOnError(error, "保存图标设置失败\n(About Blank)");
+        });
       },
     );
     modal.open();

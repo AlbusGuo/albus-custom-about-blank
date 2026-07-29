@@ -86,35 +86,35 @@
 }
 
 .about-blank-stats-bubble-left {
-  right: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+  right: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 15px);
 }
 
 .about-blank-stats-bubble-right {
-  left: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+  left: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 15px);
 }
 
 .about-blank-stats-bubble-left[data-column="1"] {
-  right: calc(50% + var(--about-blank-logo-size) / 2 + 140px);
+  right: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 140px);
 }
 
 .about-blank-stats-bubble-right[data-column="1"] {
-  left: calc(50% + var(--about-blank-logo-size) / 2 + 140px);
+  left: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 140px);
 }
 
 .about-blank-stats-bubble-left[data-column="2"] {
-  right: calc(50% + var(--about-blank-logo-size) / 2 + 265px);
+  right: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 265px);
 }
 
 .about-blank-stats-bubble-right[data-column="2"] {
-  left: calc(50% + var(--about-blank-logo-size) / 2 + 265px);
+  left: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 265px);
 }
 
 .about-blank-stats-bubble-left[data-column="3"] {
-  right: calc(50% + var(--about-blank-logo-size) / 2 + 390px);
+  right: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 390px);
 }
 
 .about-blank-stats-bubble-right[data-column="3"] {
-  left: calc(50% + var(--about-blank-logo-size) / 2 + 390px);
+  left: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 390px);
 }
 
 .about-blank-stats-bubble-label {
@@ -349,11 +349,11 @@
   }
 
   .about-blank-stats-bubble-left {
-    right: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+    right: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 15px);
   }
 
   .about-blank-stats-bubble-right {
-    left: calc(50% + var(--about-blank-logo-size) / 2 + 15px);
+    left: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 15px);
   }
 }
 
@@ -365,11 +365,11 @@
   }
 
   .about-blank-stats-bubble-left {
-    right: calc(50% + var(--about-blank-logo-size) / 2 + 10px);
+    right: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 10px);
   }
 
   .about-blank-stats-bubble-right {
-    left: calc(50% + var(--about-blank-logo-size) / 2 + 10px);
+    left: calc(50% + var(--about-blank-logo-render-size, var(--about-blank-logo-size)) / 2 + 10px);
   }
 }
 
