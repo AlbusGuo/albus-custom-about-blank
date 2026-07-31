@@ -109,10 +109,10 @@ export class StringSuggesterAsync extends SuggestModal<SuggesterType> {
 
   // This is called after `this.close()`.
   // Use `selectSuggestion()` instead to resolve to a `defaultResult` in `onClose()`.
-  onChooseSuggestion(item: SuggesterType, event: MouseEvent | KeyboardEvent) {}
+  onChooseSuggestion(_item: SuggesterType, _event: MouseEvent | KeyboardEvent) {}
 
   // This usually calls `this.close()` and then `this.onChooseSuggestion()`.
-  selectSuggestion(item: SuggesterType, event: MouseEvent | KeyboardEvent) {
+  selectSuggestion(item: SuggesterType, _event: MouseEvent | KeyboardEvent) {
     try {
       // this.app.keymap.updateModifiers(event);
       this.resolve({

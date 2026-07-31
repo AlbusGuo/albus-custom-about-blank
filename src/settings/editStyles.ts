@@ -13,12 +13,6 @@ import {
 export const editStyles = {
   rewriteCssVars: {
     emptyStateDisplay: {
-      default: (): void => {
-        document.documentElement.style.setProperty(
-          CSS_VARS.emptyStateDisplay.name,
-          CSS_VARS.emptyStateDisplay.value.default,
-        );
-      },
       hide: (): void => {
         document.documentElement.style.removeProperty(CSS_VARS.emptyStateDisplay.name);
       },

@@ -1,12 +1,10 @@
 :root {
   --about-blank-empty-state-display: none;
   --about-blank-icon-text-gap: 10px;
-  --about-blank-empty-state-container-max-height: 280px;
   --about-blank-empty-state-list-margin-top: 10px;
   --about-blank-empty-state-list-margin-top-mobile: 40px;
   --about-blank-logo-image: none;
   --about-blank-logo-size: 120px;
-  --about-blank-logo-opacity: 0.4;
   --about-blank-logo-position: top;
 }
 
@@ -43,63 +41,7 @@
     box-sizing: border-box;
     position: relative;
     top: 0;
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item) {
-    font-size: 0;
-    background-color: transparent !important;
-    color: var(--text-muted);
-    cursor: pointer;
-    height: 40px;
-    width: 40px;
-    border-radius: 4px;
-    flex-shrink: 0; 
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item):hover {
-    background-color: var(--background-modifier-hover) !important;
-    color: var(--text-normal);
-    border-radius: 4px;
-}
-
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item) svg {
-    width: 16px;
-    height: 16px;
-    color: var(--icon-color);
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item):hover svg {
-    color: var(--icon-color);
-}
-
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action:not(.about-blank-card-item) .about-blank-default-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-}
-
-
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed {
-  max-height: var(--about-blank-empty-state-container-max-height);
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed.about-blank-search-layout,
-.workspace-split.mod-root .empty-state-container.about-blank-managed.about-blank-card-layout {
-  max-height: none;
-  height: auto;
-  min-height: fit-content;
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action-list {
-  margin-top: var(--about-blank-empty-state-list-margin-top);
+    margin-top: var(--about-blank-empty-state-list-margin-top);
 }
 
 .workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action-list.is-mobile {

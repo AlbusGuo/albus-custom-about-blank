@@ -1,4 +1,5 @@
-.empty-state-container.about-blank-loading > *:not(.about-blank-loader) {
+.empty-state-container.about-blank-loading > .about-blank-component-stack,
+.empty-state-container.about-blank-layout-pending > .about-blank-component-stack {
   opacity: 0 !important;
   pointer-events: none;
 }
@@ -38,7 +39,7 @@
 }
 
 
-.empty-state-container.about-blank-ready > *:not(.about-blank-loader) {
+.empty-state-container.about-blank-ready > .about-blank-component-stack {
   animation: about-blank-reveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -50,5 +51,12 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-blank-loader-bar-fill,
+  .empty-state-container.about-blank-ready > .about-blank-component-stack {
+    animation: none;
   }
 }

@@ -1,4 +1,4 @@
-import { AbstractInputSuggest, type App, TFile } from "obsidian";
+import { AbstractInputSuggest, type App } from "obsidian";
 
 export class ExtensionSuggester extends AbstractInputSuggest<string> {
   private inputEl: HTMLInputElement;
@@ -9,12 +9,12 @@ export class ExtensionSuggester extends AbstractInputSuggest<string> {
   }
 
   getSuggestions(inputStr: string): string[] {
-    const allFiles = this.app.vault.getAllLoadedFiles();
+    const allFiles = this.app.vault.getFiles();
     const extSet = new Set<string>();
     const lowerInput = inputStr.toLowerCase();
 
     for (const file of allFiles) {
-      if (file instanceof TFile && file.extension) {
+      if (file.extension) {
         if (file.extension.toLowerCase().includes(lowerInput)) {
           extSet.add(file.extension);
         }

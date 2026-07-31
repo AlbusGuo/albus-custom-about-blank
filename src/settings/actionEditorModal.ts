@@ -158,7 +158,7 @@ export class ActionEditorModal {
     void this.updateIconPreview();
 
     iconButton.addEventListener("click", () => {
-      void this.openIconPicker();
+      this.openIconPicker();
     });
   }
 
@@ -196,8 +196,8 @@ export class ActionEditorModal {
     });
   }
 
-  private async openIconPicker(): Promise<void> {
-    const modal = await IconSuggestModal.create(
+  private openIconPicker(): void {
+    const modal = IconSuggestModal.create(
       this.app,
       this.options.iconFolder,
       this.options.iconMask,
@@ -228,7 +228,7 @@ export class ActionEditorModal {
     if (this.customIconManager.isCustomIcon(this.draft.icon)) {
       const rendered = await this.customIconManager.renderIcon(this.draft.icon, this.iconPreviewEl, this.options.iconMask);
       if (!rendered) {
-        this.iconPreviewEl.setText("?");
+        this.iconPreviewEl.setText(",");
       }
       return;
     }
@@ -236,7 +236,7 @@ export class ActionEditorModal {
     try {
       setIcon(this.iconPreviewEl, this.draft.icon);
     } catch {
-      this.iconPreviewEl.setText("?");
+      this.iconPreviewEl.setText(",");
     }
   }
 
@@ -291,7 +291,7 @@ export class ActionEditorModal {
       const rawCommands = (this.app as UnsafeApp).commands.commands;
       const commands: Command[] = Array.isArray(rawCommands)
         ? rawCommands
-        : Object.values(rawCommands ?? {}) as Command[];
+        : Object.values(rawCommands ?? {});
       const commandList = commands.map((command) => ({
         name: command.name,
         value: command.id,

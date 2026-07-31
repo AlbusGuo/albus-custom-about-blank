@@ -1,6 +1,6 @@
 import {
   type AboutBlankSettings,
-} from "src/settings/settingTab";
+} from "src/settings/settingsSchema";
 
 import {
   LOOP_MAX,

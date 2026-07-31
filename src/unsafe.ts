@@ -1,6 +1,7 @@
 import {
   type App,
   type Command,
+  type IconName,
   type View,
   type Workspace,
   type WorkspaceSplit,
@@ -30,6 +31,12 @@ export interface UnsafeEmptyActionListEl extends HTMLDivElement {
 }
 
 export interface UnsafeEmptyView extends View {
+  // EmptyView inherits ItemView at runtime, but Obsidian doesn't export its type.
+  addAction: (
+    icon: IconName,
+    title: string,
+    callback: (event: MouseEvent) => unknown,
+  ) => HTMLElement;
   // Property that `leaf.view` of `empty` should have.
   // This is an action list element (div.empty-state-action-list).
   actionListEl: UnsafeEmptyActionListEl;

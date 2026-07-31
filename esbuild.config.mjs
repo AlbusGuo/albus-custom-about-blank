@@ -1,6 +1,5 @@
 import builtins from "builtin-modules";
 import esbuild from "esbuild";
-import fs from "fs";
 import process from "process";
 
 const banner = `/*
@@ -10,19 +9,6 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = process.argv[2] === "production";
-
-const cssPlugin = {
-  name: "css",
-  setup(build) {
-    build.onLoad({ filter: /\.css$/ }, async (args) => {
-      const css = await fs.promises.readFile(args.path, "utf8");
-      return {
-        contents: css,
-        loader: "text",
-      };
-    });
-  },
-};
 
 const context = await esbuild.context({
   banner: {
@@ -54,7 +40,6 @@ const context = await esbuild.context({
   outfile: "main.js",
   minify: prod,
   legalComments: "eof",
-  plugins: [cssPlugin],
 });
 
 const cssContext = await esbuild.context({

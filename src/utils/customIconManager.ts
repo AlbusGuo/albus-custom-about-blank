@@ -54,7 +54,7 @@ export class CustomIconManager {
     return segments[segments.length - 1] || filePath;
   }
 
-  async getIconsFromFolder(folderPath: string): Promise<string[]> {
+  getIconsFromFolder(folderPath: string): string[] {
     if (!folderPath || !this.app) {
       return [];
     }

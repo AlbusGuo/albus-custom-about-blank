@@ -15,45 +15,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list.about-b
   top: 0;
 }
 
-body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-card-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  min-width: 75px;
-  max-width: 110px;
-  width: auto;
-  height: auto;
-  margin: 5px;
-  padding: 8px 5px;
-  border-radius: var(--radius-m, 8px);
-  font-size: var(--font-ui-small, 12px);
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  min-width: 75px;
-  max-width: 110px;
-  width: auto;
-  height: auto;
-  margin: 5px;
-  padding: 8px 5px;
-  border-radius: var(--radius-m, 8px);
-  font-size: var(--font-ui-small, 12px);
-}
-
-body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-card-item:hover {
-  background-color: var(--background-modifier-hover) !important;
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item:hover {
-  background-color: var(--background-modifier-hover) !important;
-}
-
-
 .empty-state-action-list.about-blank-card-grid::before {
   display: none !important;
 }
@@ -101,20 +62,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action.about-blank-
   width: 22px;
   height: 22px;
 }
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item .about-blank-default-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  height: auto;
-}
-
-.workspace-split.mod-root .empty-state-container.about-blank-managed .empty-state-action.about-blank-card-item .about-blank-default-icon svg {
-  width: 22px;
-  height: 22px;
-}
-
 
 .about-blank-card-label {
   font-size: var(--font-ui-small, 12px);

@@ -80,7 +80,7 @@ export class DateStatEditorModal {
 
     this.contentEl.empty();
 
-    // 紧凑型 meta 行：标题 + 类型在同一行
+    // 紧凑型 meta 行: 标题 + 类型在同一行
     const metaRowEl = this.contentEl.createDiv({ cls: "about-blank-date-stat-editor-meta-row" });
 
     // 标题
@@ -116,7 +116,7 @@ export class DateStatEditorModal {
     // 日期行
     const isAnniversary = this.draft.type === DATE_STAT_TYPES.anniversary;
     const dateRowEl = this.contentEl.createDiv({ cls: "about-blank-date-stat-editor-meta-row" });
-    const dateControlEl = this.createInlineField(dateRowEl, isAnniversary ? "目标日期" : "目标日期（月·日）");
+    const dateControlEl = this.createInlineField(dateRowEl, isAnniversary ? "目标日期" : "目标日期 (月-日)");
 
     this.dateInputEl = dateControlEl.createEl("input", {
       cls: "about-blank-date-stat-editor-input",

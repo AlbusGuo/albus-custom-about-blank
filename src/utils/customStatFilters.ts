@@ -110,11 +110,6 @@ const isOperator = (value: unknown): value is CustomStatFilterOperator => {
     && Object.values(CUSTOM_STAT_FILTER_OPERATORS).includes(value as CustomStatFilterOperator);
 };
 
-const isNodeKind = (value: unknown): value is CustomStatFilterNodeKind => {
-  return typeof value === "string"
-    && Object.values(CUSTOM_STAT_FILTER_NODE_KINDS).includes(value as CustomStatFilterNodeKind);
-};
-
 const createConditionId = (): string => {
   return `custom-stat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 };
@@ -234,7 +229,7 @@ const getFileTags = (cache: CachedMetadata | null | undefined): string[] => {
     }
   });
 
-  const frontmatterTags = cache?.frontmatter?.tags;
+  const frontmatterTags: unknown = cache?.frontmatter?.tags;
   const rawTags = Array.isArray(frontmatterTags)
     ? frontmatterTags
     : typeof frontmatterTags === "string"

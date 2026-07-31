@@ -1,4 +1,4 @@
-.empty-state-container{
+.workspace-leaf-content[data-type="empty"] .empty-state-container {
   max-width: none !important;
 }
 
@@ -21,7 +21,7 @@
   min-height: 20px;
   max-width: none;
   max-height: none;
-  opacity: var(--about-blank-logo-opacity);
+  opacity: 1;
   flex: 0 0 auto;
 }
 
@@ -54,63 +54,11 @@
 
 .workspace-leaf-content[data-type="empty"] .empty-state-container {
   position: relative;
-}
-
-
-.workspace-leaf-content[data-type="empty"] .empty-state-container {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 8px;
-  padding-left: 0px;
+  padding-left: 0;
   width: 100%;
-}
-
-
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
-  min-height: 100vh;
-  max-height: none;
-  height: auto;
-}
-
-
-.workspace-leaf-content[data-type="empty"] {
-  min-height: 100vh;
-  max-height: none;
-  height: 100vh;
-  overflow: visible;
-}
-
-.workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top {
-  flex-direction: column;
-}
-
-.workspace-leaf-content[data-type="empty"]:has(.about-blank-heatmap-isometric) {
-  min-height: 0;
-  max-height: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.workspace-split.mod-root
-  .workspace-leaf-content[data-type="empty"]
-  .empty-state-container.about-blank-managed:has(.about-blank-heatmap-isometric) {
-  box-sizing: border-box;
-  min-height: 0;
-  max-height: 100%;
-  height: 100%;
-  justify-content: safe center;
-  gap: clamp(2px, 0.6vh, 8px);
-  padding-block: clamp(4px, 1vh, 12px);
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.workspace-leaf-content[data-type="empty"]
-  .empty-state-container.logo-top:has(.about-blank-heatmap-isometric) {
-  --about-blank-logo-render-size: min(
-    var(--about-blank-logo-size, 120px),
-    36vh
-  );
 }

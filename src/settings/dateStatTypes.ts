@@ -49,8 +49,8 @@ export const isDateStatDefinition = (value: unknown): value is DateStatDefinitio
 // =============================================================================
 
 /**
- * 计算纪念日天数：目标日期距今的天数
- * 使用 UTC 日期避免时区问题（业界标准做法）
+ * 计算纪念日天数: 目标日期距今的天数
+ * 使用 UTC 日期避免时区问题 (业界标准做法)
  */
 export const calcAnniversaryDays = (dateStr: string): number => {
   const target = new Date(dateStr + "T00:00:00");
@@ -64,11 +64,11 @@ export const calcAnniversaryDays = (dateStr: string): number => {
 };
 
 /**
- * 计算倒数日天数：距离下一个目标日期还有多少天
- * 输入格式为 'MM-DD'，按年重复
- * 也兼容 'YYYY-MM-DD' 格式（自动提取月日部分）
- * 若本年度目标已过（diff < 0），则计算到明年的天数
- * 若恰好是今天（diff === 0），则显示 0
+ * 计算倒数日天数: 距离下一个目标日期还有多少天
+ * 输入格式为 'MM-DD', 按年重复
+ * 也兼容 'YYYY-MM-DD' 格式 (自动提取月日部分)
+ * 若本年度目标已过 (diff < 0), 则计算到明年的天数
+ * 若恰好是今天 (diff === 0), 则显示 0
  */
 export const calcCountdownDays = (dateStr: string): number => {
   if (!dateStr || typeof dateStr !== "string") {
@@ -82,7 +82,7 @@ export const calcCountdownDays = (dateStr: string): number => {
   let day: number;
 
   if (parts.length === 3) {
-    // YYYY-MM-DD 格式：取后两位
+    // YYYY-MM-DD 格式: 取后两位
     month = parseInt(parts[1], 10);
     day = parseInt(parts[2], 10);
   } else if (parts.length === 2) {
@@ -106,7 +106,7 @@ export const calcCountdownDays = (dateStr: string): number => {
   let target = new Date(today.getFullYear(), month - 1, day);
   target.setHours(0, 0, 0, 0);
 
-  // 已过（< 0）才推到下一年；正好今天（=== 0）显示 0
+  // 已过 (< 0) 才推到下一年; 正好今天 (=== 0) 显示 0
   if (target.getTime() < todayTime) {
     target = new Date(today.getFullYear() + 1, month - 1, day);
     target.setHours(0, 0, 0, 0);

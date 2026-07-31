@@ -78,7 +78,7 @@ export const toPracticalAction = (
     ? ""
     : action.icon;
 
-  const callback: () => Promise<void> = (() => {
+  const callback: PracticalAction["callback"] = (() => {
     if (action.content.kind === ACTION_KINDS.command) {
       return generateCommandCallback(app, action);
     }
@@ -107,7 +107,7 @@ const generateCommandCallback = (
     try {
       const res: boolean = await (app as UnsafeApp).commands.executeCommandById(commandId);
       if (!res) {
-        new Notice(`执行命令失败：${commandName} (${commandId})`);
+        new Notice(`执行命令失败: ${commandName} (${commandId})`);
       }
     } catch (error) {
       loggerOnError(error, "命令执行失败\n(About Blank)");
@@ -125,7 +125,7 @@ const generateFileCallback = (
   const basicCallback = async (): Promise<void> => {
     // Prevent creating a new file.
     if (!app.vault.getAbstractFileByPath(normalizedPath)) {
-      new Notice(`文件未找到：${fileName} (${normalizedPath})`);
+      new Notice(`文件未找到: ${fileName} (${normalizedPath})`);
       return;
     }
     await app.workspace.openLinkText("", normalizedPath);
@@ -142,10 +142,10 @@ const generateFileCallback = (
 
 const generateUrlCallback = (
   action: Action,
-): () => Promise<void> => {
+): () => void => {
   const { url } = action.content as ContentOfUrl;
 
-  return async (): Promise<void> => {
+  return (): void => {
     try {
       const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
       window.open(normalizedUrl, "_blank", "noopener,noreferrer");

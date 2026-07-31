@@ -10,9 +10,6 @@ export const CSS_CLASSES = {
 export const CSS_VARS = {
   emptyStateDisplay: {
     name: "--about-blank-empty-state-display",
-    value: {
-      default: "block",
-    },
   },
   iconTextGap: {
     name: "--about-blank-icon-text-gap",

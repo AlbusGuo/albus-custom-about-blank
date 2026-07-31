@@ -51,14 +51,14 @@ export class IconSuggestModal extends SuggestModal<IconSuggestionItem> {
     this.setPlaceholder("搜索图标名称...");
   }
 
-  static async create(
+  static create(
     app: App,
     iconFolder: string,
     masked: boolean,
     onChoose: (iconName: string) => void,
-  ): Promise<IconSuggestModal> {
+  ): IconSuggestModal {
     const customIconManager = CustomIconManager.getInstance(app);
-    const customIcons = await customIconManager.getIconsFromFolder(iconFolder);
+    const customIcons = customIconManager.getIconsFromFolder(iconFolder);
     return new IconSuggestModal(app, ["", ...customIcons, ...getIconIds()], masked, onChoose);
   }
 

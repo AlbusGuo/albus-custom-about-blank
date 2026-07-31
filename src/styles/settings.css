@@ -1,8 +1,8 @@
 /* =============================================================================
- *   设置标签页布局 — 完全复刻 mathcraft 的固定标签栏 + 可滚动内容区结构
+ *   设置标签页布局 - 完全复刻 mathcraft 的固定标签栏 + 可滚动内容区结构
  * ============================================================================= */
 
-/* Root container — flex column fills the settings pane */
+/* Root container - flex column fills the settings pane */
 .about-blank-settings-root {
   display: flex;
   flex-direction: column;
