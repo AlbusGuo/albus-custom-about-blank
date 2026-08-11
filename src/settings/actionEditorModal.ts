@@ -257,7 +257,7 @@ export class ActionEditorModal {
     if (this.draft.content.kind === ACTION_KINDS.file) {
       return "文件路径";
     }
-    return "https://example.com";
+    return "https://example.com 或 D:\\...\\index.html";
   }
 
   private getCurrentValue(): string {

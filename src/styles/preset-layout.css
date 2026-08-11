@@ -191,6 +191,17 @@
   );
 }
 
+.theme-dark
+  .workspace-leaf-content[data-type="empty"]
+  .empty-state-container.logo-original.about-blank-layout-isometric
+  .about-blank-component-search
+  .about-blank-logo {
+  filter: invert(1)
+    drop-shadow(
+      0 8px 12px color-mix(in srgb, var(--text-normal) 16%, transparent)
+    );
+}
+
 .workspace-leaf-content[data-type="empty"]
   .empty-state-container.logo-original.about-blank-layout-isometric
   .about-blank-component-search
@@ -375,15 +386,14 @@
   filter: brightness(1.1);
 }
 
-.about-blank-stat-platform .about-blank-stats-bubble-dragging {
-  opacity: 0.5;
+.about-blank-heatmap-isometric-svg.about-blank-pointer-sorting
+  .about-blank-stat-platform:not(.about-blank-pointer-sort-dragging),
+.about-blank-stat-platform.about-blank-pointer-sort-settling {
+  transition: translate 160ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-.about-blank-stat-platform.is-drag-over
-  .about-blank-stat-platform-top {
-  fill: var(--background-modifier-hover);
-  stroke: var(--interactive-accent);
-  stroke-dasharray: 0.35 0.2;
+.about-blank-stat-platform.about-blank-pointer-sort-dragging {
+  opacity: 0.5;
 }
 
 /* Suite B: preserve the familiar Logo-led composition. */
@@ -473,6 +483,7 @@
 @media (prefers-reduced-motion: reduce) {
   .about-blank-component,
   .about-blank-component-stack,
+  .about-blank-stat-platform,
   .about-blank-stat-platform-top,
   .about-blank-stat-platform-left-face,
   .about-blank-stat-platform-right-face {

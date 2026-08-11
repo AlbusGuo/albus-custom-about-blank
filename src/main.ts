@@ -70,9 +70,15 @@ import {
 
 import { FileListModal } from "src/ui/fileListModal";
 
+import { PointerSortController } from "src/ui/pointerSort";
+
 import {
   CustomIconManager,
 } from "src/utils/customIconManager";
+
+import {
+  LocalHtmlBridge,
+} from "src/localHtmlBridge";
 
 import {
   createNewTabLayout,
@@ -93,16 +99,6 @@ type StatItem = {
   kind: StatItemKind;
   dateStatType?: string;
   files?: TFile[];
-};
-type StatLayoutRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-type StatLayoutSnapshot = {
-  container: HTMLElement;
-  rects: Map<string, StatLayoutRect>;
 };
 type HeatmapDateCountMap = Record<string, number>;
 type HeatmapColorSegment = AboutBlankSettings["heatmapColorSegments"][number];
@@ -133,12 +129,16 @@ const ISOMETRIC_MAX_PILLAR_HEIGHT = 6;
 export default class AboutBlank extends Plugin {
   settings: AboutBlankSettings;
   customIconManager: CustomIconManager;
+  private readonly localHtmlBridge = new LocalHtmlBridge();
 
   // 性能优化: 类级别的缓存
   private statsCache: StatItem[] | null = null;
   private statsCacheTimestamp: number = 0;
   private readonly STATS_CACHE_DURATION = 5000;
-  private draggedStatFamily: StatItemFamily | null = null;
+  private statSortControllers = new Map<
+    Element,
+    PointerSortController<HTMLElement | SVGElement>
+  >();
 
   // 热力图/统计相关缓存
   private heatmapDataCache: { [key: string]: number } | null = null;
@@ -268,6 +268,9 @@ export default class AboutBlank extends Plugin {
     this.newTabLayoutFrames.clear();
     this.newTabLayoutActionElements.forEach((actionEl) => actionEl.remove());
     this.newTabLayoutActionElements.clear();
+    this.statSortControllers.forEach((controller) => controller.destroy());
+    this.statSortControllers.clear();
+    this.localHtmlBridge.close();
     // 清理嵌入式搜索视图
     this.cleanupEmbeddedSearches(true);
     this.customIconManager.clearCache();
@@ -328,6 +331,7 @@ export default class AboutBlank extends Plugin {
   private applyStatsSettings = (renderImmediately = true): void => {
     this.statsCache = null;
     this.getOpenNewTabContexts().forEach(({ container }) => {
+      this.destroyStatSortControllersIn(container);
       container.querySelectorAll('.about-blank-stats-bubbles')
         .forEach((element) => element.remove());
     });
@@ -810,6 +814,9 @@ export default class AboutBlank extends Plugin {
     container?.querySelectorAll('.about-blank-logo').forEach((el) => el.remove());
     container?.querySelectorAll('.about-blank-embedded-search').forEach((el) => el.remove());
     container?.querySelectorAll('.about-blank-heatmap-container').forEach((el) => el.remove());
+    if (container) {
+      this.destroyStatSortControllersIn(container);
+    }
     container?.querySelectorAll('.about-blank-stats-bubbles').forEach((el) => el.remove());
     componentStack?.remove();
   };
@@ -836,6 +843,12 @@ export default class AboutBlank extends Plugin {
     this.embeddedSearchCleanups.forEach((cleanup, host) => {
       if (!host.isConnected) {
         cleanup(true);
+      }
+    });
+    this.statSortControllers.forEach((controller, rootEl) => {
+      if (!rootEl.isConnected) {
+        controller.destroy();
+        this.statSortControllers.delete(rootEl);
       }
     });
   };
@@ -1193,7 +1206,7 @@ export default class AboutBlank extends Plugin {
     // 3. 添加按钮 (搜索框下方)
     if (this.shouldRenderCustomShortcuts() && !hasCustomShortcuts) {
       const practicalActions: PracticalAction[] = this.settings.actions
-        .map((action) => toPracticalAction(this.app, action))
+        .map((action) => toPracticalAction(this.app, action, this.localHtmlBridge))
         .filter((action) => action !== undefined);
       this.addActionButtonsAsCards(emptyActionListEl, practicalActions);
     }
@@ -1762,6 +1775,31 @@ export default class AboutBlank extends Plugin {
     return stableId ? `date-${stableId}` : `date-${index}`;
   };
 
+  syncStatDefinitionOrder = (kind: "custom" | "date"): void => {
+    if (this.settings.statOrder.length === 0) {
+      return;
+    }
+    const desiredIds = kind === "custom"
+      ? this.settings.customStats.map((stat, index) => this.getCustomStatItemId(stat, index))
+      : this.settings.dateStats.map((stat, index) => this.getDateStatItemId(stat, index));
+    const desiredIdSet = new Set(desiredIds);
+    let desiredIndex = 0;
+    const nextOrder = this.resolveLegacyStatOrder(this.settings.statOrder).map((id) => {
+      if (!desiredIdSet.has(id)) {
+        return id;
+      }
+      const desiredId = desiredIds[desiredIndex];
+      desiredIndex += 1;
+      return desiredId;
+    });
+    while (desiredIndex < desiredIds.length) {
+      nextOrder.push(desiredIds[desiredIndex]);
+      desiredIndex += 1;
+    }
+    this.settings.statOrder = Array.from(new Set(nextOrder));
+    this.settings.dateStatOrder = [];
+  };
+
   private getStatFamily = (stat: StatItem): StatItemFamily => {
     return stat.kind === "date" ? "date" : "file";
   };
@@ -1832,194 +1870,110 @@ export default class AboutBlank extends Plugin {
     return Array.from(new Set(order.map((id) => legacyIdMap.get(id) ?? id)));
   };
 
-  private getRenderedStatElements = (
-    container: HTMLElement,
-  ): Array<HTMLElement | SVGElement> => {
-    return Array.from(container.querySelectorAll<HTMLElement | SVGElement>(
-      [
-        '.about-blank-stat-platform[data-stat-id]',
-        '.about-blank-stats-classic > [data-stat-id]',
-      ].join(', '),
-    ));
-  };
-
-  private captureStatLayout = (
-    containers: HTMLElement[],
-    statIds: Set<string>,
-  ): StatLayoutSnapshot[] => {
-    return containers.map((container) => {
-      const rects = new Map<string, StatLayoutRect>();
-      this.getRenderedStatElements(container).forEach((element) => {
-        const statId = element.dataset.statId;
-        if (!statId || !statIds.has(statId)) {
-          return;
-        }
-        const rect = element.getBoundingClientRect();
-        rects.set(statId, {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        });
-      });
-      return { container, rects };
-    }).filter((snapshot) => snapshot.rects.size > 0);
-  };
-
-  private animateStatsFromLayout = (
-    snapshots: StatLayoutSnapshot[],
-    statIds: Set<string>,
-  ): void => {
-    snapshots.forEach(({ container, rects }) => {
-      const view = container.ownerDocument.defaultView;
-      if (!view || view.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        return;
+  private destroyStatSortControllersIn = (container: Element): void => {
+    this.statSortControllers.forEach((controller, rootEl) => {
+      if (rootEl === container || container.contains(rootEl)) {
+        controller.destroy();
+        this.statSortControllers.delete(rootEl);
       }
-
-      this.getRenderedStatElements(container).forEach((element) => {
-        const statId = element.dataset.statId;
-        if (!statId || !statIds.has(statId)) {
-          return;
-        }
-        const previousRect = rects.get(statId);
-        if (!previousRect) {
-          return;
-        }
-
-        const nextRect = element.getBoundingClientRect();
-        const deltaX = previousRect.left - nextRect.left;
-        const deltaY = previousRect.top - nextRect.top;
-        if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
-          return;
-        }
-
-        const isIsometric = element.classList.contains('about-blank-stat-platform');
-        let animationDeltaX = deltaX;
-        let animationDeltaY = deltaY;
-        if (isIsometric && 'getScreenCTM' in element) {
-          const screenMatrix = (element as SVGGraphicsElement).getScreenCTM();
-          if (screenMatrix) {
-            const determinant = (screenMatrix.a * screenMatrix.d)
-              - (screenMatrix.b * screenMatrix.c);
-            if (Math.abs(determinant) > Number.EPSILON) {
-              animationDeltaX = (
-                (screenMatrix.d * deltaX) - (screenMatrix.c * deltaY)
-              ) / determinant;
-              animationDeltaY = (
-                (-screenMatrix.b * deltaX) + (screenMatrix.a * deltaY)
-              ) / determinant;
-            }
-          }
-        }
-        const finalOpacity = view.getComputedStyle(element).opacity || '1';
-        const startOpacity = Math.min(
-          Number.parseFloat(finalOpacity) || 1,
-          isIsometric ? 0.72 : 0.76,
-        ).toString();
-        const keyframes: Keyframe[] = isIsometric
-          ? [
-            {
-              transform: `matrix(1, 0, 0, 1, ${animationDeltaX}, ${animationDeltaY})`,
-              opacity: startOpacity,
-            },
-            {
-              transform: `matrix(1, 0, 0, 1, ${animationDeltaX * 0.08}, ${animationDeltaY * 0.08})`,
-              opacity: finalOpacity,
-              offset: 0.78,
-            },
-            {
-              transform: 'matrix(1, 0, 0, 1, 0, 0)',
-              opacity: finalOpacity,
-            },
-          ]
-          : [
-            {
-              transform: `translate(${deltaX}px, ${deltaY}px) scale(0.96)`,
-              opacity: startOpacity,
-            },
-            {
-              transform: `translate(${-deltaX * 0.035}px, ${-deltaY * 0.035}px) scale(1.035)`,
-              opacity: finalOpacity,
-              offset: 0.74,
-            },
-            {
-              transform: 'translate(0, 0) scale(1)',
-              opacity: finalOpacity,
-            },
-          ];
-        const animation = element.animate(keyframes, {
-          duration: isIsometric ? 480 : 420,
-          easing: isIsometric
-            ? 'cubic-bezier(0.22, 1, 0.36, 1)'
-            : 'cubic-bezier(0.2, 0.8, 0.2, 1)',
-          fill: 'both',
-        });
-        element.classList.add('about-blank-stat-swap-animating');
-        const cleanup = (): void => {
-          element.classList.remove('about-blank-stat-swap-animating');
-        };
-        animation.addEventListener('cancel', cleanup, { once: true });
-        animation.addEventListener('finish', () => {
-          cleanup();
-          animation.cancel();
-        }, { once: true });
-      });
     });
   };
 
-  private rerenderStats = (animatedStatIds: string[] = []): void => {
-    const contexts = this.getOpenNewTabContexts();
-    const statIds = new Set(animatedStatIds);
-    if (statIds.size > 0) {
-      contexts.forEach(({ container }) => {
-        container.querySelectorAll('.about-blank-stats-bubble-dragging')
-          .forEach((element) => {
-            element.classList.remove('about-blank-stats-bubble-dragging');
-          });
-      });
-    }
-    const snapshots = statIds.size > 0
-      ? this.captureStatLayout(
-        contexts.map(({ container }) => container),
-        statIds,
-      )
-      : [];
-
-    contexts.forEach((context) => {
-      context.container.querySelectorAll('.about-blank-stats-bubbles')
+  private rerenderStats = (): void => {
+    this.getOpenNewTabContexts().forEach(({ container }) => {
+      this.destroyStatSortControllersIn(container);
+      container.querySelectorAll('.about-blank-stats-bubbles')
         .forEach((element) => element.remove());
     });
     this.globalRenderStatsImmediate?.();
-    if (snapshots.length > 0) {
-      this.animateStatsFromLayout(snapshots, statIds);
-    }
   };
 
-  private swapStats = (
-    draggedStatId: string,
-    targetStatId: string,
-    orderedStats: Array<StatItem | undefined>,
+  private commitStatPointerOrder = (
+    familyOrder: string[],
+    sourceId: string,
   ): void => {
-    const currentOrder = orderedStats
-      .filter((stat): stat is StatItem => stat !== undefined)
-      .map((stat) => stat.id);
-    const draggedIndex = currentOrder.indexOf(draggedStatId);
-    const targetIndex = currentOrder.indexOf(targetStatId);
-    if (draggedIndex === -1 || targetIndex === -1) {
+    const allStats = this.statsCache ?? [];
+    const statsById = new Map(allStats.map((stat) => [stat.id, stat]));
+    const sourceStat = statsById.get(sourceId);
+    if (!sourceStat) {
       return;
     }
-
-    [currentOrder[draggedIndex], currentOrder[targetIndex]] = [
-      currentOrder[targetIndex],
-      currentOrder[draggedIndex],
+    const fullOrder = this.resolveLegacyStatOrder([
+      ...this.settings.statOrder,
+      ...this.settings.dateStatOrder,
+    ]);
+    const persistedIds = new Set(fullOrder);
+    const currentStats = [
+      ...fullOrder
+        .map((id) => statsById.get(id))
+        .filter((stat): stat is StatItem => stat !== undefined),
+      ...allStats.filter((stat) => !persistedIds.has(stat.id)),
     ];
-
-    this.settings.statOrder = currentOrder;
+    const family = this.getStatFamily(sourceStat);
+    let familyIndex = 0;
+    this.settings.statOrder = currentStats.map((stat) => {
+      if (this.getStatFamily(stat) !== family) {
+        return stat.id;
+      }
+      const nextId = familyOrder[familyIndex];
+      familyIndex += 1;
+      return nextId ?? stat.id;
+    });
     this.settings.dateStatOrder = [];
-    this.rerenderStats([draggedStatId, targetStatId]);
+    this.rerenderStats();
     void this.saveSettingsSilent().catch((error) => {
       loggerOnError(error, "保存统计项目顺序失败\n(About Blank)");
     });
+  };
+
+  private setupStatPointerSort = (
+    rootEl: HTMLElement | SVGSVGElement,
+  ): void => {
+    this.statSortControllers.get(rootEl)?.destroy();
+    const isIsometric = rootEl.namespaceURI === "http://www.w3.org/2000/svg";
+    const itemSelector = isIsometric
+      ? ".about-blank-stat-platform[data-stat-id]"
+      : ".about-blank-stats-bubbles > [data-stat-id]";
+    const getItems = (sourceEl: HTMLElement | SVGElement) => {
+      const family = sourceEl.getAttribute("data-stat-family");
+      return Array.from(rootEl.querySelectorAll<HTMLElement | SVGElement>(itemSelector))
+        .filter((item) => item.getAttribute("data-stat-family") === family)
+        .sort((left, right) => {
+          return Number(left.getAttribute("data-stat-order"))
+            - Number(right.getAttribute("data-stat-order"));
+        });
+    };
+    if (rootEl.querySelectorAll(itemSelector).length < 2) {
+      return;
+    }
+
+    const controller = new PointerSortController<HTMLElement | SVGElement>({
+      rootEl,
+      itemSelector,
+      strategy: "nearest",
+      getItems,
+      getId: (itemEl) => itemEl.getAttribute("data-stat-id") ?? "",
+      toLocalDelta: isIsometric
+        ? (itemEl, deltaX, deltaY) => {
+          const matrix = (itemEl as SVGGraphicsElement).getScreenCTM();
+          if (!matrix) {
+            return [deltaX, deltaY];
+          }
+          const determinant = (matrix.a * matrix.d) - (matrix.b * matrix.c);
+          if (Math.abs(determinant) <= Number.EPSILON) {
+            return [deltaX, deltaY];
+          }
+          return [
+            ((matrix.d * deltaX) - (matrix.c * deltaY)) / determinant,
+            ((-matrix.b * deltaX) + (matrix.a * deltaY)) / determinant,
+          ];
+        }
+        : undefined,
+      onCommit: (orderedIds, sourceId) => {
+        this.commitStatPointerOrder(orderedIds, sourceId);
+      },
+    });
+    this.statSortControllers.set(rootEl, controller);
   };
 
   // 创建统计气泡
@@ -2029,6 +1983,7 @@ export default class AboutBlank extends Plugin {
       if (!this.settings.showStats) {
         // 移除所有现有的统计气泡和内联统计条
         this.getOpenNewTabContexts().forEach((context) => {
+          this.destroyStatSortControllersIn(context.container);
           context.container.querySelectorAll('.about-blank-stats-bubbles')
             .forEach((element) => element.remove());
         });
@@ -2183,8 +2138,6 @@ export default class AboutBlank extends Plugin {
           `about-blank-stats-${preset}`,
         ],
       });
-      const stats = orderedStats.filter((stat): stat is StatItem => stat !== undefined);
-      const statsById = new Map(stats.map((stat) => [stat.id, stat]));
       const familyStats = this.groupOrderedStatsByFamily(orderedStats);
       const placements = new Map<string, {
         isLeft: boolean;
@@ -2232,7 +2185,7 @@ export default class AboutBlank extends Plugin {
 
       const fragment = document.createDocumentFragment();
 
-      orderedStats.forEach((stat) => {
+      orderedStats.forEach((stat, statOrderIndex) => {
         if (!stat) return;
 
         const placement = placements.get(stat.id);
@@ -2258,8 +2211,9 @@ export default class AboutBlank extends Plugin {
           '--about-blank-stat-column-offset',
           `${columnIndex * 134}px`,
         );
-        bubble.setAttribute('draggable', 'true');
         bubble.setAttribute('data-stat-id', stat.id);
+        bubble.setAttribute('data-stat-family', this.getStatFamily(stat));
+        bubble.setAttribute('data-stat-order', statOrderIndex.toString());
         bubble.style.top = `${top}px`;
 
         const label = document.createElement('div');
@@ -2274,59 +2228,11 @@ export default class AboutBlank extends Plugin {
         bubble.appendChild(value);
         this.addStatFileListInteraction(bubble, stat);
 
-        // 拖拽事件
-        bubble.addEventListener('dragstart', (e) => {
-          e.dataTransfer?.setData('text/plain', stat.id);
-          this.draggedStatFamily = this.getStatFamily(stat);
-          bubble.classList.add('about-blank-stats-bubble-dragging');
-          e.dataTransfer!.effectAllowed = 'move';
-        });
-        bubble.addEventListener('dragend', () => {
-          this.draggedStatFamily = null;
-          bubble.dataset.aboutBlankSuppressClick = 'true';
-          bubble.classList.remove('about-blank-stats-bubble-dragging');
-          statsContainer.querySelectorAll('.about-blank-stats-bubble-drag-over')
-            .forEach((element) => element.classList.remove('about-blank-stats-bubble-drag-over'));
-          requestAnimationFrame(() => {
-            delete bubble.dataset.aboutBlankSuppressClick;
-          });
-        });
-        bubble.addEventListener('dragover', (e) => {
-          if (this.draggedStatFamily !== this.getStatFamily(stat)) {
-            bubble.classList.remove('about-blank-stats-bubble-drag-over');
-            if (e.dataTransfer) {
-              e.dataTransfer.dropEffect = 'none';
-            }
-            return;
-          }
-          e.preventDefault();
-          e.dataTransfer!.dropEffect = 'move';
-          bubble.classList.add('about-blank-stats-bubble-drag-over');
-        });
-        bubble.addEventListener('dragleave', () => {
-          bubble.classList.remove('about-blank-stats-bubble-drag-over');
-        });
-        bubble.addEventListener('drop', (e) => {
-          e.preventDefault();
-          this.draggedStatFamily = null;
-          bubble.classList.remove('about-blank-stats-bubble-drag-over');
-          const draggedStatId = e.dataTransfer?.getData('text/plain');
-          const targetStatId = stat.id;
-          const draggedStat = draggedStatId ? statsById.get(draggedStatId) : undefined;
-          if (
-            draggedStatId
-            && draggedStat
-            && draggedStatId !== targetStatId
-            && this.getStatFamily(draggedStat) === this.getStatFamily(stat)
-          ) {
-            this.swapStats(draggedStatId, targetStatId, orderedStats);
-          }
-        });
-
         fragment.appendChild(bubble);
       });
 
       statsContainer.appendChild(fragment);
+      this.setupStatPointerSort(statsContainer);
     });
   };
 
@@ -2342,7 +2248,6 @@ export default class AboutBlank extends Plugin {
     const weekCount = Math.max(1, Number(svgEl.dataset.weekCount) || 53);
     const localWidth = 100;
     const localHeight = 44;
-    const statsById = new Map(stats.map((stat) => [stat.id, stat]));
     const familyStats = this.groupOrderedStatsByFamily(orderedStats);
     const heatmapPlatformColors = this.settings.heatmapColorSegments
       .filter((segment) => segment.max > 0)
@@ -2437,6 +2342,7 @@ export default class AboutBlank extends Plugin {
         attr: {
           'data-stat-id': stat.id,
           'data-stat-family': family,
+          'data-stat-order': familyIndex.toString(),
           'data-stat-row': rowIndex.toString(),
           'data-stat-column': positionInRow.toString(),
           'data-isometric-plane': isFileFamily ? 'foreground' : 'background',
@@ -2514,7 +2420,6 @@ export default class AboutBlank extends Plugin {
           stat.dateStatType === 'anniversary' ? 'is-anniversary' : 'is-countdown',
         );
       }
-      bubble.setAttribute('draggable', 'true');
       bubble.setAttribute('data-stat-id', stat.id);
       bubble.setAttribute('data-stat-family', family);
 
@@ -2527,68 +2432,13 @@ export default class AboutBlank extends Plugin {
       bubble.append(label, value);
       this.addStatFileListInteraction(bubble, stat);
 
-      bubble.addEventListener('dragstart', (event) => {
-        event.dataTransfer?.setData('text/plain', stat.id);
-        this.draggedStatFamily = family;
-        bubble.classList.add('about-blank-stats-bubble-dragging');
-        if (event.dataTransfer) {
-          event.dataTransfer.effectAllowed = 'move';
-        }
-      });
-      bubble.addEventListener('dragend', () => {
-        this.draggedStatFamily = null;
-        bubble.dataset.aboutBlankSuppressClick = 'true';
-        bubble.classList.remove('about-blank-stats-bubble-dragging');
-        platformEl.classList.remove('is-drag-over');
-        svgEl.querySelectorAll('.about-blank-stats-bubble-drag-over')
-          .forEach((element) => element.classList.remove('about-blank-stats-bubble-drag-over'));
-        requestAnimationFrame(() => {
-          delete bubble.dataset.aboutBlankSuppressClick;
-        });
-      });
-      bubble.addEventListener('dragover', (event) => {
-        if (this.draggedStatFamily !== family) {
-          bubble.classList.remove('about-blank-stats-bubble-drag-over');
-          platformEl.classList.remove('is-drag-over');
-          if (event.dataTransfer) {
-            event.dataTransfer.dropEffect = 'none';
-          }
-          return;
-        }
-        event.preventDefault();
-        if (event.dataTransfer) {
-          event.dataTransfer.dropEffect = 'move';
-        }
-        bubble.classList.add('about-blank-stats-bubble-drag-over');
-        platformEl.classList.add('is-drag-over');
-      });
-      bubble.addEventListener('dragleave', () => {
-        bubble.classList.remove('about-blank-stats-bubble-drag-over');
-        platformEl.classList.remove('is-drag-over');
-      });
-      bubble.addEventListener('drop', (event) => {
-        event.preventDefault();
-        this.draggedStatFamily = null;
-        bubble.classList.remove('about-blank-stats-bubble-drag-over');
-        platformEl.classList.remove('is-drag-over');
-        const draggedStatId = event.dataTransfer?.getData('text/plain');
-        const draggedStat = draggedStatId ? statsById.get(draggedStatId) : undefined;
-        if (
-          draggedStatId
-          && draggedStat
-          && draggedStatId !== stat.id
-          && this.getStatFamily(draggedStat) === family
-        ) {
-          this.swapStats(draggedStatId, stat.id, orderedStats);
-        }
-      });
-
       contentEl.appendChild(bubble);
       platformEl.appendChild(contentEl);
       svgEl.appendChild(platformEl);
     });
 
     this.sortIsometricScene(svgEl);
+    this.setupStatPointerSort(svgEl);
   };
 
   private sortIsometricScene = (svgEl: SVGSVGElement): void => {
@@ -3012,6 +2862,9 @@ export default class AboutBlank extends Plugin {
         )
         : null;
       const previousWeekCount = previousIsometricSvg?.dataset.weekCount;
+      if (previousIsometricSvg) {
+        this.destroyStatSortControllersIn(previousIsometricSvg);
+      }
       const retainedStats = previousIsometricSvg && this.settings.showStats
         ? Array.from(previousIsometricSvg.querySelectorAll<SVGElement>(
           ':scope > .about-blank-stats-bubbles',
@@ -3037,6 +2890,7 @@ export default class AboutBlank extends Plugin {
         ) {
           nextIsometricSvg.append(...retainedStats);
           this.sortIsometricScene(nextIsometricSvg);
+          this.setupStatPointerSort(nextIsometricSvg);
         } else {
           this.globalRenderStatsImmediate?.();
         }

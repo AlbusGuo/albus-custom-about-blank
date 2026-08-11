@@ -116,16 +116,6 @@
   font-size: 13px;
 }
 
-.about-blank-stats-bubble-left,
-.about-blank-stats-bubble-right {
-  cursor: grab;
-}
-
-.about-blank-stats-bubble-left:active,
-.about-blank-stats-bubble-right:active {
-  cursor: grabbing;
-}
-
 .about-blank-stats-bubble-left.is-clickable-file-stat,
 .about-blank-stats-bubble-right.is-clickable-file-stat {
   cursor: pointer;
@@ -137,21 +127,21 @@
   outline-offset: 2px;
 }
 
-.about-blank-stats-bubble-dragging {
-  opacity: 0.6;
-  transform: scale(0.95);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+.about-blank-stats-bubbles.about-blank-pointer-sorting
+  > [data-stat-id]:not(.about-blank-pointer-sort-dragging),
+.about-blank-stats-bubbles
+  > [data-stat-id].about-blank-pointer-sort-settling {
+  transition:
+    opacity 120ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease,
+    translate 160ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.about-blank-stats-bubbles
+  > [data-stat-id].about-blank-pointer-sort-dragging {
+  opacity: 0.5;
   z-index: 10;
-}
-
-.about-blank-stats-bubble-drag-over {
-  border: 2px dashed var(--interactive-accent);
-  background-color: var(--background-modifier-hover);
-}
-
-.about-blank-stat-swap-animating {
-  pointer-events: none !important;
-  will-change: transform, opacity;
 }
 
 @media (max-width: 768px) {
@@ -396,4 +386,10 @@
 .about-blank-date-stat-editor-input:focus {
   border-color: var(--interactive-accent);
   box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-blank-stats-bubbles > [data-stat-id] {
+    transition: none;
+  }
 }

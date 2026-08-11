@@ -59,13 +59,17 @@ import {
   ConfirmModal,
 } from "src/ui/confirmModal";
 
+import {
+  PointerSortController,
+} from "src/ui/pointerSort";
+
 // =============================================================================
 
 export class AboutBlankSettingTab extends PluginSettingTab {
   plugin: AboutBlank;
   contentEl!: HTMLElement;
   icon: string = 'app-window';
-  private draggedIndex: number | null = null;
+  private settingsSortController: PointerSortController<HTMLElement> | null = null;
   private customStatEditorModal: CustomStatEditorModal | null = null;
   private customStatEditorIndex: number | null = null;
   private customStatEditorRefreshPending = false;
@@ -92,6 +96,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     try {
       const { containerEl } = this;
 
+      this.settingsSortController?.destroy();
+      this.settingsSortController = null;
       containerEl.empty();
       containerEl.addClass('about-blank-settings-root');
 
@@ -148,6 +154,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     this.closeActionEditor(false);
     this.closeCustomStatEditor(false);
     this.closeDateStatEditor(false);
+    this.settingsSortController?.destroy();
+    this.settingsSortController = null;
     contentEl.empty();
     this.actionRowElements.clear();
     this.customStatRowElements.clear();
@@ -189,6 +197,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       this.customStatEditorIndex = null;
       this.dateStatEditorIndex = null;
     }
+    this.setupSettingsPointerSort();
   };
 
   private makeSettingsShortcuts = (containerEl: HTMLElement): void => {
@@ -466,6 +475,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                 });
             });
 
+            this.makeSettingSortable(statHeaderSetting, "custom-stats", index);
+
           });
         });
       }
@@ -544,6 +555,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
                   this.renderCurrentTab();
                 });
             });
+
+            this.makeSettingSortable(statHeaderSetting, "date-stats", index);
 
           });
         });
@@ -781,8 +794,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       this.actionRowElements.set(index, setting.settingEl);
       this.decorateActionName(setting, action);
 
-      this.makeDraggable(setting.settingEl, index);
-
       setting.addExtraButton((button) => button
         .setIcon('pencil')
         .setTooltip('编辑快捷方式')
@@ -816,7 +827,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           this.renderCurrentTab();
         }));
 
-      this.addDragHandle(setting);
+      this.makeSettingSortable(setting, "actions", index);
     });
   };
 
@@ -951,94 +962,98 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     }
   }
 
-  /**
-   * 添加拖拽手柄
-   */
-  private addDragHandle = (setting: Setting): void => {
+  private makeSettingSortable = (
+    setting: Setting,
+    group: "actions" | "custom-stats" | "date-stats",
+    index: number,
+  ): void => {
+    setting.settingEl.addClass(
+      "about-blank-draggable-setting",
+      "about-blank-pointer-sort-setting",
+    );
+    setting.settingEl.dataset.sortGroup = group;
+    setting.settingEl.dataset.sortIndex = index.toString();
     const dragHandle = setting.controlEl.createDiv({
-      cls: 'about-blank-drag-handle',
-      attr: { 'aria-label': '拖拽排序' }
+      cls: ['clickable-icon', 'about-blank-drag-handle'],
+      attr: { 'aria-label': '拖拽排序' },
     });
     setIcon(dragHandle, 'grip-vertical');
-    
-    dragHandle.addEventListener('mousedown', () => {
-      setting.settingEl.setAttribute('draggable', 'true');
-    });
-    
-    dragHandle.addEventListener('mouseup', () => {
-      setting.settingEl.setAttribute('draggable', 'false');
+  };
+
+  private setupSettingsPointerSort = (): void => {
+    const sortableRows = this.contentEl.querySelectorAll<HTMLElement>(
+      ".about-blank-pointer-sort-setting",
+    );
+    if (sortableRows.length < 2) {
+      return;
+    }
+
+    this.settingsSortController = new PointerSortController<HTMLElement>({
+      rootEl: this.contentEl,
+      itemSelector: ".about-blank-pointer-sort-setting",
+      handleSelector: ".about-blank-drag-handle",
+      strategy: "vertical",
+      movementAxis: "vertical",
+      scrollEl: this.contentEl.parentElement,
+      getItems: (sourceEl) => {
+        const group = sourceEl.dataset.sortGroup;
+        return Array.from(this.contentEl.querySelectorAll<HTMLElement>(
+          `.about-blank-pointer-sort-setting[data-sort-group="${group}"]`,
+        ));
+      },
+      getId: (itemEl) => {
+        return `${itemEl.dataset.sortGroup}:${itemEl.dataset.sortIndex}`;
+      },
+      onCommit: (orderedIds, sourceId) => {
+        void this.commitSettingsSort(orderedIds, sourceId).catch((error) => {
+          loggerOnError(error, "保存拖拽顺序失败\n(About Blank)");
+        });
+      },
     });
   };
 
-  /**
-   * 使设置项可拖拽 (参考 Custom Ribbon Buttons)
-   */
-  private makeDraggable = (element: HTMLElement, index: number): void => {
-    element.setAttribute('draggable', 'false');
-    element.classList.add('about-blank-draggable-setting');
-    element.dataset.index = index.toString();
+  private commitSettingsSort = async (
+    orderedIds: string[],
+    sourceId: string,
+  ): Promise<void> => {
+    const group = sourceId.slice(0, sourceId.lastIndexOf(":"));
+    const indices = orderedIds.map((id) => Number(id.slice(id.lastIndexOf(":") + 1)));
+    if (indices.some((index) => !Number.isInteger(index))) {
+      return;
+    }
 
-    element.addEventListener('dragstart', (e) => {
-      this.draggedIndex = index;
-      element.classList.add('dragging');
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', index.toString());
-      }
-    });
+    if (group === "actions") {
+      const current = [...this.plugin.settings.actions];
+      this.plugin.settings.actions = indices.map((index) => current[index]);
+      this.actionEditorIndex = this.remapEditorIndex(this.actionEditorIndex, indices);
+    } else if (group === "custom-stats") {
+      const current = [...this.plugin.settings.customStats];
+      this.plugin.settings.customStats = indices.map((index) => current[index]);
+      this.customStatEditorIndex = this.remapEditorIndex(this.customStatEditorIndex, indices);
+      this.plugin.syncStatDefinitionOrder("custom");
+    } else if (group === "date-stats") {
+      const current = [...this.plugin.settings.dateStats];
+      this.plugin.settings.dateStats = indices.map((index) => current[index]);
+      this.dateStatEditorIndex = this.remapEditorIndex(this.dateStatEditorIndex, indices);
+      this.plugin.syncStatDefinitionOrder("date");
+    } else {
+      return;
+    }
 
-    element.addEventListener('dragend', () => {
-      this.draggedIndex = null;
-      element.classList.remove('dragging');
-      document.querySelectorAll('.about-blank-draggable-setting.drag-over').forEach(el => {
-        el.classList.remove('drag-over');
-      });
-    });
-
-    element.addEventListener('dragover', (e) => {
-      if (this.draggedIndex !== null && this.draggedIndex !== index) {
-        e.preventDefault();
-        if (e.dataTransfer) {
-          e.dataTransfer.dropEffect = 'move';
-        }
-        element.classList.add('drag-over');
-      }
-    });
-
-    element.addEventListener('dragenter', (e) => {
-      if (this.draggedIndex !== null && this.draggedIndex !== index) {
-        e.preventDefault();
-        element.classList.add('drag-over');
-      }
-    });
-
-    element.addEventListener('dragleave', (e) => {
-      if (e.currentTarget === e.target || !element.contains(e.relatedTarget as Node)) {
-        element.classList.remove('drag-over');
-      }
-    });
-
-    element.addEventListener('drop', (e) => {
-      e.preventDefault();
-      element.classList.remove('drag-over');
-
-      if (this.draggedIndex !== null && this.draggedIndex !== index) {
-        void this.reorderActions(this.draggedIndex, index);
-      }
-    });
-  };
-
-  /**
-   * 重新排序按钮
-   */
-  private reorderActions = async (fromIndex: number, toIndex: number): Promise<void> => {
-    const actions = this.plugin.settings.actions;
-    const [movedAction] = actions.splice(fromIndex, 1);
-    actions.splice(toIndex, 0, movedAction);
-    await this.plugin.saveSettings();
-    // 刷新所有打开的新标签页, 使其显示最新的按钮顺序
+    await this.plugin.saveSettingsSilent();
     this.plugin.refreshAllNewTabs();
     this.renderCurrentTab();
+  };
+
+  private remapEditorIndex = (
+    editorIndex: number | null,
+    reorderedOriginalIndices: number[],
+  ): number | null => {
+    if (editorIndex === null) {
+      return null;
+    }
+    const nextIndex = reorderedOriginalIndices.indexOf(editorIndex);
+    return nextIndex >= 0 ? nextIndex : null;
   };
 
   private makeSettingsHeatmap = (containerEl: HTMLElement): void => {

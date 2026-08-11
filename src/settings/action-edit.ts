@@ -24,6 +24,11 @@ import {
   type UnsafeApp,
 } from "src/unsafe";
 
+import {
+  isLocalHtmlReference,
+  type LocalHtmlBridge,
+} from "src/localHtmlBridge";
+
 // =============================================================================
 
 export const moveAction = (
@@ -52,6 +57,7 @@ export interface PracticalAction {
 export const toPracticalAction = (
   app: App,
   action: Action,
+  localHtmlBridge?: LocalHtmlBridge,
 ): PracticalAction | void => {
   const unqualified = isFalsyString(action.name)
     || !Object.values(ACTION_KINDS).includes(action.content.kind);
@@ -83,7 +89,7 @@ export const toPracticalAction = (
       return generateCommandCallback(app, action);
     }
     if (action.content.kind === ACTION_KINDS.url) {
-      return generateUrlCallback(action);
+      return generateUrlCallback(app, action, localHtmlBridge);
     }
     return generateFileCallback(app, action);
   })();
@@ -141,16 +147,35 @@ const generateFileCallback = (
 };
 
 const generateUrlCallback = (
+  app: App,
   action: Action,
-): () => void => {
+  localHtmlBridge?: LocalHtmlBridge,
+): () => Promise<void> | void => {
   const { url } = action.content as ContentOfUrl;
 
-  return (): void => {
+  return async (): Promise<void> => {
     try {
+      if (isLocalHtmlReference(url)) {
+        if (!localHtmlBridge) {
+          throw new Error("本地 HTML 服务不可用");
+        }
+        const localUrl = await localHtmlBridge.createUrl(url);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "webviewer",
+          state: {
+            url: localUrl,
+            navigate: true,
+          },
+          active: true,
+        });
+        app.workspace.revealLeaf(leaf);
+        return;
+      }
       const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
       window.open(normalizedUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
-      loggerOnError(error, "网页打开失败\n(About Blank)");
+      loggerOnError(error, "网页打开失败, 请确认本地文件存在并已启用核心插件网页浏览器\n(About Blank)");
     }
   };
 };
