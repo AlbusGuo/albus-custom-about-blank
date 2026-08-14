@@ -14,8 +14,6 @@ import {
 
 import isFalsyString from "src/utils/isFalsyString";
 
-import moveItemInArray from "src/utils/moveItemInArray";
-
 import {
   loggerOnError,
 } from "src/commons";
@@ -28,21 +26,6 @@ import {
   isLocalHtmlReference,
   type LocalHtmlBridge,
 } from "src/localHtmlBridge";
-
-// =============================================================================
-
-export const moveAction = (
-  actions: Action[],
-  index: number,
-  direction: -1 | 1,
-): Action[] => {
-  return moveItemInArray(
-    actions,
-    index,
-    direction,
-    true,
-  );
-};
 
 // =============================================================================
 
@@ -169,7 +152,7 @@ const generateUrlCallback = (
           },
           active: true,
         });
-        app.workspace.revealLeaf(leaf);
+        await app.workspace.revealLeaf(leaf);
         return;
       }
       const normalizedUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;

@@ -50,9 +50,6 @@ export const CUSTOM_STAT_FILTER_NODE_KINDS = {
   group: "group",
 } as const;
 
-export type CustomStatFilterNodeKind =
-  typeof CUSTOM_STAT_FILTER_NODE_KINDS[keyof typeof CUSTOM_STAT_FILTER_NODE_KINDS];
-
 export type LegacyCustomStatType = "folder" | "fileType";
 
 export interface CustomStatFilterCondition {
@@ -506,11 +503,6 @@ export const getOperatorsForConditionType = (
 export const isOperatorValueOptional = (operator: CustomStatFilterOperator): boolean => {
   return operator === CUSTOM_STAT_FILTER_OPERATORS.exists
     || operator === CUSTOM_STAT_FILTER_OPERATORS.notExists;
-};
-
-export const isDateConditionType = (type: CustomStatFilterConditionType): boolean => {
-  return type === CUSTOM_STAT_FILTER_CONDITION_TYPES.createdAt
-    || type === CUSTOM_STAT_FILTER_CONDITION_TYPES.modifiedAt;
 };
 
 export const isCustomStatFilterCondition = (value: unknown): value is CustomStatFilterCondition => {

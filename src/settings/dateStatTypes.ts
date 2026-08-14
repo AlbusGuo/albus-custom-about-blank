@@ -16,13 +16,6 @@ export interface DateStatDefinition {
   date: string; // 'YYYY-MM-DD' for anniversary, 'MM-DD' for countdown
 }
 
-export const NEW_DATE_STAT: DateStatDefinition = {
-  id: "",
-  type: DATE_STAT_TYPES.anniversary,
-  title: "",
-  date: "",
-};
-
 export const createDateStat = (): DateStatDefinition => ({
   id: `date-stat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   type: DATE_STAT_TYPES.anniversary,
@@ -128,42 +121,10 @@ export const calcDateStatValue = (stat: DateStatDefinition): number => {
 };
 
 /**
- * 获取日期统计的标签文本
- */
-export const getDateStatLabel = (stat: DateStatDefinition): string => {
-  if (stat.type === DATE_STAT_TYPES.anniversary) {
-    return "天";
-  }
-  return "天";
-};
-
-/**
  * 获取日期统计的类型标签
  */
 export const getDateStatTypeLabel = (type: DateStatType): string => {
   return type === DATE_STAT_TYPES.anniversary ? "纪念日" : "倒数日";
-};
-
-/**
- * 验证日期字符串格式
- */
-export const isValidAnniversaryDate = (dateStr: string): boolean => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return false;
-  }
-  const d = new Date(dateStr + "T00:00:00");
-  return !Number.isNaN(d.getTime())
-    && d.toISOString().slice(0, 10) === dateStr;
-};
-
-export const isValidCountdownDate = (dateStr: string): boolean => {
-  if (!/^\d{2}-\d{2}$/.test(dateStr)) {
-    return false;
-  }
-  const parts = dateStr.split("-");
-  const month = parseInt(parts[0], 10);
-  const day = parseInt(parts[1], 10);
-  return month >= 1 && month <= 12 && day >= 1 && day <= 31;
 };
 
 /**

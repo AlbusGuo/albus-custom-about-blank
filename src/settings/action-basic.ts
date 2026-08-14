@@ -6,32 +6,12 @@ import {
   LOOP_MAX,
 } from "src/constants";
 
-import {
-  type ValuesOf,
-} from "src/types";
-
 // =============================================================================
 
 export const ACTION_KINDS = {
   command: "command",
   file: "file",
   url: "url",
-} as const;
-
-export const ACTION_KINDS_NAME: {
-  [key in ValuesOf<typeof ACTION_KINDS>]: string;
-} = {
-  command: "命令",
-  file: "文件",
-  url: "网页",
-} as const;
-
-export const ACTION_KINDS_ICON: {
-  [key in ValuesOf<typeof ACTION_KINDS>]: string;
-} = {
-  command: "terminal",
-  file: "file-text",
-  url: "globe",
 } as const;
 
 export interface ContentOfCommand {
