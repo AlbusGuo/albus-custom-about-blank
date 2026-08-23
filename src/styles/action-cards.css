@@ -58,11 +58,6 @@ body .workspace-leaf-content[data-type="empty"] .empty-state-action-list.about-b
   color: var(--icon-color);
 }
 
-.about-blank-card-icon .about-blank-custom-icon-svg {
-  width: 22px;
-  height: 22px;
-}
-
 .about-blank-card-label {
   font-size: var(--font-ui-small, 12px);
   color: var(--text-muted);

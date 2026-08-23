@@ -5,10 +5,6 @@ import {
   SuggestModal,
 } from "obsidian";
 
-import {
-  CustomIconManager,
-} from "src/utils/customIconManager";
-
 interface IconSuggestionItem {
   value: string;
   label: string;
@@ -19,19 +15,14 @@ interface IconSuggestionItem {
 export class IconSuggestModal extends SuggestModal<IconSuggestionItem> {
   private readonly icons: IconSuggestionItem[];
   private readonly onChoose: (iconName: string) => void;
-  private readonly customIconManager: CustomIconManager;
-  private readonly masked: boolean;
 
   constructor(
     app: App,
     icons: string[],
-    masked: boolean,
     onChoose: (iconName: string) => void,
   ) {
     super(app);
     this.onChoose = onChoose;
-    this.customIconManager = CustomIconManager.getInstance(app);
-    this.masked = masked;
     this.icons = icons.map((icon) => {
       if (icon === "") {
         return {
@@ -42,9 +33,7 @@ export class IconSuggestModal extends SuggestModal<IconSuggestionItem> {
 
       return {
         value: icon,
-        label: this.customIconManager.isCustomIcon(icon)
-          ? this.customIconManager.getDisplayName(icon)
-          : icon,
+        label: icon,
       };
     });
 
@@ -53,13 +42,10 @@ export class IconSuggestModal extends SuggestModal<IconSuggestionItem> {
 
   static create(
     app: App,
-    iconFolder: string,
-    masked: boolean,
     onChoose: (iconName: string) => void,
   ): IconSuggestModal {
-    const customIconManager = CustomIconManager.getInstance(app);
-    const customIcons = customIconManager.getIconsFromFolder(iconFolder);
-    return new IconSuggestModal(app, ["", ...customIcons, ...getIconIds()], masked, onChoose);
+    const defaultIconIds = getIconIds().filter((iconId) => !iconId.startsWith("CI-"));
+    return new IconSuggestModal(app, ["", ...defaultIconIds], onChoose);
   }
 
   getSuggestions(query: string): IconSuggestionItem[] {
@@ -84,16 +70,14 @@ export class IconSuggestModal extends SuggestModal<IconSuggestionItem> {
       return;
     }
 
-    if (this.customIconManager.isCustomIcon(icon.value)) {
-      void this.customIconManager.renderIcon(icon.value, previewEl, this.masked).then((rendered) => {
-        if (!rendered) {
-          setIcon(previewEl, "help-circle");
-        }
-      });
-      return;
+    try {
+      setIcon(previewEl, icon.value);
+      if (!previewEl.querySelector("svg")) {
+        setIcon(previewEl, "help-circle");
+      }
+    } catch {
+      setIcon(previewEl, "help-circle");
     }
-
-    setIcon(previewEl, icon.value);
   }
 
   onChooseSuggestion(icon: IconSuggestionItem): void {

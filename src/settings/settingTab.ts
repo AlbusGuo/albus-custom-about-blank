@@ -52,10 +52,6 @@ import {
 import type AboutBlank from "src/main";
 
 import {
-  CustomIconManager,
-} from "src/utils/customIconManager";
-
-import {
   ConfirmModal,
 } from "src/ui/confirmModal";
 
@@ -82,12 +78,10 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private actionEditorIndex: number | null = null;
   private actionEditorRefreshPending = false;
   private actionRowElements = new Map<number, HTMLElement>();
-  private readonly customIconManager: CustomIconManager;
 
   constructor(app: App, plugin: AboutBlank) {
     super(app, plugin);
     this.plugin = plugin;
-    this.customIconManager = CustomIconManager.getInstance(app);
   }
 
   // ---------------------------------------------------------------------------
@@ -201,47 +195,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   };
 
   private makeSettingsShortcuts = (containerEl: HTMLElement): void => {
-    const basicGroup = new SettingGroup(containerEl);
-
-    basicGroup.addSetting((iconFolderSetting) => {
-        iconFolderSetting
-          .setName("自定义图标文件夹")
-          .setDesc("限制快捷方式图标选择器只显示指定文件夹下的 SVG 图标")
-          .addText((text) => {
-            text
-              .setPlaceholder("例如 attachments/icons")
-              .setValue(this.plugin.settings.shortcutIconFolder)
-              .onChange((value) => {
-                this.plugin.settings.shortcutIconFolder = value.trim();
-              });
-
-            new FolderSuggester(this.app, text.inputEl);
-            text.inputEl.addEventListener("blur", () => {
-              void (async () => {
-                this.plugin.customIconManager.clearCache();
-                await this.plugin.saveSettings();
-                this.renderCurrentTab();
-              })();
-            });
-          });
-    });
-
-    basicGroup.addSetting((iconMaskSetting) => {
-        iconMaskSetting
-          .setName("自定义图标遮罩")
-          .setDesc("开启后将自定义 SVG 图标统一渲染为 Obsidian 图标颜色")
-          .addToggle((toggle) => {
-            toggle
-              .setValue(this.plugin.settings.shortcutIconMask)
-              .onChange(async (value) => {
-                this.plugin.settings.shortcutIconMask = value;
-                await this.plugin.saveSettings();
-                this.plugin.refreshAllNewTabs();
-                this.renderCurrentTab();
-              });
-          });
-    });
-
     new Setting(containerEl)
       .setName("快捷方式列表")
       .setHeading();
@@ -842,29 +795,28 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       text: action.name.trim() || '未命名快捷方式',
     });
 
-    const renderPreview = async () => {
+    const renderPreview = () => {
       previewEl.empty();
       if (!action.icon) {
         setIcon(previewEl, 'slash');
         return;
       }
 
-      if (this.customIconManager.isCustomIcon(action.icon)) {
-        const rendered = await this.customIconManager.renderIcon(action.icon, previewEl, this.plugin.settings.shortcutIconMask);
-        if (!rendered) {
-          previewEl.setText(',');
-        }
+      if (this.plugin.customIconsIntegration.renderIcon(previewEl, action.icon)) {
         return;
       }
 
       try {
         setIcon(previewEl, action.icon);
+        if (!previewEl.querySelector('svg')) {
+          previewEl.setText(',');
+        }
       } catch {
         previewEl.setText(',');
       }
     };
 
-    void renderPreview();
+    renderPreview();
   }
 
   private getActionSummary(action: Action): string {
@@ -893,8 +845,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     this.closeActionEditor(false);
     this.actionEditorIndex = index;
     this.actionEditorModal = new ActionEditorModal(this.app, action, {
-      iconFolder: this.plugin.settings.shortcutIconFolder,
-      iconMask: this.plugin.settings.shortcutIconMask,
+      customIconsIntegration: this.plugin.customIconsIntegration,
       onChange: async (nextAction) => {
         if (!this.plugin.settings.actions[index]) {
           return;
@@ -961,6 +912,13 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       descEl.setText(summary);
     }
   }
+
+  refreshIntegratedIconPreviews = (): void => {
+    this.actionRowElements.forEach((_rowEl, index) => {
+      this.updateActionRow(index);
+    });
+    this.actionEditorModal?.refreshIconPreview();
+  };
 
   private makeSettingSortable = (
     setting: Setting,

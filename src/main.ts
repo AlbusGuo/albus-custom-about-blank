@@ -72,8 +72,8 @@ import { FileListModal } from "src/ui/fileListModal";
 import { PointerSortController } from "src/ui/pointerSort";
 
 import {
-  CustomIconManager,
-} from "src/utils/customIconManager";
+  CustomIconsIntegration,
+} from "src/integrations/customIconsIntegration";
 
 import {
   LocalHtmlBridge,
@@ -127,7 +127,7 @@ const ISOMETRIC_MAX_PILLAR_HEIGHT = 6;
 
 export default class AboutBlank extends Plugin {
   settings: AboutBlankSettings;
-  customIconManager: CustomIconManager;
+  customIconsIntegration: CustomIconsIntegration;
   private readonly localHtmlBridge = new LocalHtmlBridge();
 
   // 性能优化: 类级别的缓存
@@ -167,11 +167,22 @@ export default class AboutBlank extends Plugin {
   private newTabLayoutActionElements = new Set<HTMLElement>();
   private layoutSwitchInProgress = false;
   private settingsTabRegistrationTimer: number | null = null;
+  private settingTab: { refreshIntegratedIconPreviews: () => void } | null = null;
 
   async onload() {
     try {
-      this.customIconManager = CustomIconManager.getInstance(this.app);
       await this.loadSettings();
+      this.customIconsIntegration = new CustomIconsIntegration(
+        this.app,
+        this.manifest.id,
+        () => {
+          if (this.pluginReady) {
+            this.refreshRenderedActionIcons();
+          }
+          this.settingTab?.refreshIntegratedIconPreviews();
+        },
+      );
+      this.syncCustomIcons();
       this.syncEmptyStateDisplayMode();
       this.app.workspace.onLayoutReady(this.backBurner);
 
@@ -270,9 +281,10 @@ export default class AboutBlank extends Plugin {
     this.statSortControllers.forEach((controller) => controller.destroy());
     this.statSortControllers.clear();
     this.localHtmlBridge.close();
+    this.customIconsIntegration?.destroy();
+    this.settingTab = null;
     // 清理嵌入式搜索视图
     this.cleanupEmbeddedSearches(true);
-    this.customIconManager.clearCache();
     // 清理 CSS 变量
     const root = document.documentElement;
     root.style.removeProperty('--about-blank-heatmap-enabled');
@@ -292,7 +304,9 @@ export default class AboutBlank extends Plugin {
       this.settingsTabRegistrationTimer = null;
       void import("src/settings/settingTab")
         .then(({ AboutBlankSettingTab }) => {
-          this.addSettingTab(new AboutBlankSettingTab(this.app, this));
+          const settingTab = new AboutBlankSettingTab(this.app, this);
+          this.settingTab = settingTab;
+          this.addSettingTab(settingTab);
         })
         .catch((error: unknown) => {
           loggerOnError(error, "加载设置界面失败\n(About Blank)");
@@ -318,6 +332,7 @@ export default class AboutBlank extends Plugin {
     this.applyLogoSettings();
     this.applyHeatmapSettings();
     this.applyStatsSettings();
+    this.syncCustomIcons();
   };
 
   // 保存设置但不刷新页面
@@ -325,6 +340,23 @@ export default class AboutBlank extends Plugin {
     this.settings = this.sanitizeSettingsShape(this.settings);
     this.syncEmptyStateDisplayMode();
     await this.saveData(this.settings);
+    this.syncCustomIcons();
+  };
+
+  private syncCustomIcons = (): void => {
+    if (!this.customIconsIntegration) {
+      return;
+    }
+    const iconIds = Array.from(new Set(
+      this.settings.actions
+        .map((action) => action.icon.trim())
+        .filter((iconId) => iconId.startsWith("CI-")),
+    )).sort();
+    void this.customIconsIntegration
+      .syncRequiredIcons(iconIds)
+      .catch((error) => {
+        loggerOnError(error, "同步 Custom Icons 图标需求失败\n(About Blank)");
+      });
   };
 
   private applyStatsSettings = (renderImmediately = true): void => {
@@ -1276,7 +1308,7 @@ export default class AboutBlank extends Plugin {
       card.removeAttribute('title');
 
       const iconEl = card.createEl("div", { cls: "about-blank-card-icon" });
-      void this.renderActionIcon(iconEl, action.icon);
+      this.renderActionIcon(iconEl, action.icon);
 
       card.createEl("div", {
         cls: "about-blank-card-label",
@@ -1285,25 +1317,42 @@ export default class AboutBlank extends Plugin {
     });
   };
 
-  private renderActionIcon = async (iconEl: HTMLElement, iconName: string): Promise<void> => {
+  private renderActionIcon = (iconEl: HTMLElement, iconName: string): void => {
     iconEl.empty();
     if (isFalsyString(iconName)) {
       return;
     }
 
-    if (this.customIconManager.isCustomIcon(iconName)) {
-      const rendered = await this.customIconManager.renderIcon(
-        iconName,
-        iconEl,
-        this.settings.shortcutIconMask,
-      );
-      if (!rendered) {
-        setIcon(iconEl, 'help-circle');
-      }
+    if (this.customIconsIntegration.renderIcon(iconEl, iconName)) {
       return;
     }
 
-    setIcon(iconEl, iconName);
+    try {
+      setIcon(iconEl, iconName);
+      if (!iconEl.querySelector("svg")) {
+        setIcon(iconEl, "help-circle");
+      }
+    } catch {
+      setIcon(iconEl, "help-circle");
+    }
+  };
+
+  private refreshRenderedActionIcons = (): void => {
+    const actions = this.settings.actions
+      .map((action) => toPracticalAction(this.app, action, this.localHtmlBridge))
+      .filter((action) => action !== undefined);
+    this.getOpenNewTabContexts().forEach(({ actionListEl }) => {
+      const cards = Array.from(
+        actionListEl.querySelectorAll<HTMLElement>('.about-blank-card-item'),
+      );
+      cards.forEach((card, index) => {
+        const action = actions[index];
+        const iconEl = card.querySelector<HTMLElement>('.about-blank-card-icon');
+        if (action && iconEl) {
+          this.renderActionIcon(iconEl, action.icon);
+        }
+      });
+    });
   };
 
   // 嵌入搜索框到新标签页 (Float Search 原生搜索引擎)

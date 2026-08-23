@@ -26,8 +26,6 @@ export interface AboutBlankSettings {
   centerActionListVertically: boolean;
   deleteActionListMarginTop: boolean;
   shortcutListEnabled: boolean;
-  shortcutIconFolder: string;
-  shortcutIconMask: boolean;
   logoEnabled: boolean;
   logoPath: string;
   logoDirectory: string;
@@ -57,8 +55,6 @@ const DEFAULT_SETTINGS: AboutBlankSettings = {
   centerActionListVertically: false,
   deleteActionListMarginTop: false,
   shortcutListEnabled: true,
-  shortcutIconFolder: "",
-  shortcutIconMask: true,
   logoEnabled: true,
   logoPath: "",
   logoDirectory: "",
@@ -137,8 +133,6 @@ export const settingsPropTypeCheck: {
   centerActionListVertically: (value: unknown) => isBool(value),
   deleteActionListMarginTop: (value: unknown) => isBool(value),
   shortcutListEnabled: (value: unknown) => isBool(value),
-  shortcutIconFolder: (value: unknown) => typeof value === "string",
-  shortcutIconMask: (value: unknown) => isBool(value),
   logoEnabled: (value: unknown) => isBool(value),
   logoPath: (value: unknown) => typeof value === "string",
   logoDirectory: (value: unknown) => typeof value === "string",

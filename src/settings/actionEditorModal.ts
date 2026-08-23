@@ -26,16 +26,15 @@ import {
 } from "src/unsafe";
 
 import {
-  CustomIconManager,
-} from "src/utils/customIconManager";
+  CustomIconsIntegration,
+} from "src/integrations/customIconsIntegration";
 
 import {
   EditorModal,
 } from "src/ui/editorModal";
 
 interface ActionEditorModalOptions {
-  iconFolder: string;
-  iconMask: boolean;
+  customIconsIntegration: CustomIconsIntegration;
   onChange: (action: Action) => Promise<void>;
   onClose?: () => void;
 }
@@ -43,7 +42,6 @@ interface ActionEditorModalOptions {
 export class ActionEditorModal {
   private readonly app: App;
   private readonly options: ActionEditorModalOptions;
-  private readonly customIconManager: CustomIconManager;
   private readonly draft: Action;
   private modal: EditorModal | null = null;
   private contentEl: HTMLDivElement | null = null;
@@ -58,7 +56,6 @@ export class ActionEditorModal {
   constructor(app: App, action: Action, options: ActionEditorModalOptions) {
     this.app = app;
     this.options = options;
-    this.customIconManager = CustomIconManager.getInstance(app);
     this.draft = structuredClone(action);
     this.lastCommittedState = JSON.stringify(this.draft);
   }
@@ -155,10 +152,10 @@ export class ActionEditorModal {
     });
 
     this.iconPreviewEl = iconButton.createDiv({ cls: "about-blank-icon-picker-preview" });
-    void this.updateIconPreview();
+    this.updateIconPreview();
 
     iconButton.addEventListener("click", () => {
-      this.openIconPicker();
+      void this.openIconPicker(iconButton);
     });
   }
 
@@ -196,25 +193,37 @@ export class ActionEditorModal {
     });
   }
 
-  private openIconPicker(): void {
-    const modal = IconSuggestModal.create(
-      this.app,
-      this.options.iconFolder,
-      this.options.iconMask,
-      (selectedIcon: string) => {
-        void (async () => {
-          this.draft.icon = selectedIcon;
-          await this.updateIconPreview();
-          await this.commitChanges();
-        })().catch((error) => {
-          loggerOnError(error, "保存图标设置失败\n(About Blank)");
-        });
-      },
-    );
+  private async openIconPicker(sourceEl: HTMLElement): Promise<void> {
+    try {
+      const result = await this.options.customIconsIntegration.openIconPicker(
+        sourceEl,
+        this.draft.icon,
+      );
+      if (result.handled) {
+        if (result.icon !== null) {
+          await this.applySelectedIcon(result.icon);
+        }
+        return;
+      }
+    } catch (error) {
+      loggerOnError(error, "打开 Custom Icons 图标选择器失败\n(About Blank)");
+    }
+
+    const modal = IconSuggestModal.create(this.app, (selectedIcon: string) => {
+      void this.applySelectedIcon(selectedIcon).catch((error) => {
+        loggerOnError(error, "保存图标设置失败\n(About Blank)");
+      });
+    });
     modal.open();
   }
 
-  private async updateIconPreview(): Promise<void> {
+  private async applySelectedIcon(selectedIcon: string): Promise<void> {
+    this.draft.icon = selectedIcon;
+    this.updateIconPreview();
+    await this.commitChanges();
+  }
+
+  private updateIconPreview(): void {
     if (!this.iconPreviewEl) {
       return;
     }
@@ -225,20 +234,23 @@ export class ActionEditorModal {
       return;
     }
 
-    if (this.customIconManager.isCustomIcon(this.draft.icon)) {
-      const rendered = await this.customIconManager.renderIcon(this.draft.icon, this.iconPreviewEl, this.options.iconMask);
-      if (!rendered) {
-        this.iconPreviewEl.setText(",");
-      }
+    if (this.options.customIconsIntegration.renderIcon(this.iconPreviewEl, this.draft.icon)) {
       return;
     }
 
     try {
       setIcon(this.iconPreviewEl, this.draft.icon);
+      if (!this.iconPreviewEl.querySelector("svg")) {
+        this.iconPreviewEl.setText(",");
+      }
     } catch {
       this.iconPreviewEl.setText(",");
     }
   }
+
+  refreshIconPreview = (): void => {
+    this.updateIconPreview();
+  };
 
   private getValueLabel(): string {
     if (this.draft.content.kind === ACTION_KINDS.command) {
