@@ -195,10 +195,6 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   };
 
   private makeSettingsShortcuts = (containerEl: HTMLElement): void => {
-    new Setting(containerEl)
-      .setName("快捷方式列表")
-      .setHeading();
-
     const actionsGroup = new SettingGroup(containerEl);
 
     if (this.plugin.settings.actions.length === 0) {

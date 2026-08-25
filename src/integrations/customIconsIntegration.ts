@@ -183,7 +183,10 @@ export class CustomIconsIntegration {
     return Array.from(new Set(
       iconIds
         .map((iconId) => iconId.trim())
-        .filter((iconId) => iconId.startsWith("CI-")),
+        .filter((iconId) => (
+          iconId.length > 0
+          && (iconId.startsWith("CI-") || !iconId.includes(":"))
+        )),
     )).sort();
   }
 }

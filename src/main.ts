@@ -350,7 +350,10 @@ export default class AboutBlank extends Plugin {
     const iconIds = Array.from(new Set(
       this.settings.actions
         .map((action) => action.icon.trim())
-        .filter((iconId) => iconId.startsWith("CI-")),
+        .filter((iconId) => (
+          iconId.length > 0
+          && (iconId.startsWith("CI-") || !iconId.includes(":"))
+        )),
     )).sort();
     void this.customIconsIntegration
       .syncRequiredIcons(iconIds)
