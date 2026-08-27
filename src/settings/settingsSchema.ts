@@ -10,7 +10,7 @@ import {
 import {
   isCustomStatDefinition,
   type CustomStatDefinition,
-} from "src/utils/customStatFilters";
+} from "src/utils/customStatQuery";
 
 import isBool from "src/utils/isBool";
 
@@ -28,7 +28,6 @@ export interface AboutBlankSettings {
   shortcutListEnabled: boolean;
   logoEnabled: boolean;
   logoPath: string;
-  logoDirectory: string;
   logoSize: number;
   searchBoxEnabled: boolean;
   showStats: boolean;
@@ -39,7 +38,6 @@ export interface AboutBlankSettings {
   heatmapEnabled: boolean;
   heatmapStyle: "flat" | "isometric";
   heatmapDataSource: string;
-  heatmapFrontmatterField: string;
   heatmapColorSegments: Array<{ min: number; max: number; color: string }>;
   customStats: CustomStatDefinition[];
   statOrder: string[];
@@ -57,7 +55,6 @@ const DEFAULT_SETTINGS: AboutBlankSettings = {
   shortcutListEnabled: true,
   logoEnabled: true,
   logoPath: "",
-  logoDirectory: "",
   logoSize: 350,
   searchBoxEnabled: true,
   showStats: true,
@@ -67,8 +64,7 @@ const DEFAULT_SETTINGS: AboutBlankSettings = {
   obsidianStartDate: "",
   heatmapEnabled: true,
   heatmapStyle: "flat",
-  heatmapDataSource: "frontmatter",
-  heatmapFrontmatterField: "created",
+  heatmapDataSource: "note.created",
   heatmapColorSegments: [
     { min: 0, max: 0, color: "var(--background-primary)" },
     { min: 1, max: 2, color: "#9be9a8" },
@@ -135,14 +131,16 @@ export const settingsPropTypeCheck: {
   shortcutListEnabled: (value: unknown) => isBool(value),
   logoEnabled: (value: unknown) => isBool(value),
   logoPath: (value: unknown) => typeof value === "string",
-  logoDirectory: (value: unknown) => typeof value === "string",
   logoSize: (value: unknown) => typeof value === "number" && Number.isFinite(value),
   heatmapEnabled: (value: unknown) => isBool(value),
   heatmapStyle: (value: unknown) => value === "flat" || value === "isometric",
   heatmapDataSource: (value: unknown) => {
-    return typeof value === "string" && ["frontmatter", "fileCreation"].includes(value);
+    return typeof value === "string" && (
+      value === "file.ctime"
+      || value === "file.mtime"
+      || value.startsWith("note.")
+    );
   },
-  heatmapFrontmatterField: (value: unknown) => typeof value === "string",
   heatmapColorSegments: (value: unknown) => {
     return Array.isArray(value) && value.every(isHeatmapColorSegment);
   },

@@ -100,6 +100,25 @@ export const newActionClone = (): Action => {
   return structuredClone(NEW_ACTION);
 };
 
+export const isActionComplete = (action: Action): boolean => {
+  if (!action.name.trim()) {
+    return false;
+  }
+  if (action.content.kind === ACTION_KINDS.command) {
+    return Boolean(
+      action.content.commandId.trim()
+      && action.content.commandName.trim(),
+    );
+  }
+  if (action.content.kind === ACTION_KINDS.file) {
+    return Boolean(
+      action.content.filePath.trim()
+      && action.content.fileName.trim(),
+    );
+  }
+  return Boolean(action.content.url.trim());
+};
+
 // If omit the `settings` argument, it will simply return the UUID.
 // If a `settings` is provided, it checks for duplicates and returns a unique ID.
 export const genNewCmdId = (settings?: AboutBlankSettings): string => {

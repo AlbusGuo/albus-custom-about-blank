@@ -1,7 +1,8 @@
 import {
   type App,
-  type Command,
+  Setting,
   setIcon,
+  setTooltip,
 } from "obsidian";
 
 import {
@@ -18,14 +19,6 @@ import {
 } from "src/ui/iconSuggestModal";
 
 import {
-  StringSuggesterAsync,
-} from "src/ui/stringSuggesterAsync";
-
-import {
-  type UnsafeApp,
-} from "src/unsafe";
-
-import {
   CustomIconsIntegration,
 } from "src/integrations/customIconsIntegration";
 
@@ -33,10 +26,19 @@ import {
   EditorModal,
 } from "src/ui/editorModal";
 
+import {
+  CommandInputSuggester,
+  FileInputSuggester,
+} from "src/ui/actionTargetSuggester";
+
+import {
+  getRegisteredCommands,
+} from "src/utils/commandRegistry";
+
 interface ActionEditorModalOptions {
   customIconsIntegration: CustomIconsIntegration;
   onChange: (action: Action) => Promise<void>;
-  onClose?: () => void;
+  onClose?: (action: Action) => void;
 }
 
 export class ActionEditorModal {
@@ -44,11 +46,10 @@ export class ActionEditorModal {
   private readonly options: ActionEditorModalOptions;
   private readonly draft: Action;
   private modal: EditorModal | null = null;
-  private contentEl: HTMLDivElement | null = null;
+  private contentEl: HTMLElement | null = null;
   private nameInputEl: HTMLInputElement | null = null;
-  private valueInputEl: HTMLInputElement | null = null;
-  private typeSelectEl: HTMLSelectElement | null = null;
   private iconPreviewEl: HTMLElement | null = null;
+  private targetSuggester: CommandInputSuggester | FileInputSuggester | null = null;
   private autoSaveTimer: number | null = null;
   private saveChain: Promise<void> = Promise.resolve();
   private lastCommittedState: string;
@@ -69,31 +70,21 @@ export class ActionEditorModal {
       modalClass: "about-blank-action-editor-modal-shell",
       contentClass: "about-blank-action-editor-modal",
       onOpen: (contentEl) => {
-        this.contentEl = contentEl as HTMLDivElement;
+        this.contentEl = contentEl;
         this.render();
-        requestAnimationFrame(() => {
+        this.nameInputEl?.win.requestAnimationFrame(() => {
           this.nameInputEl?.focus();
           this.nameInputEl?.select();
         });
       },
       onClose: () => {
-        this.contentEl = null;
-        this.nameInputEl = null;
-        this.valueInputEl = null;
-        this.typeSelectEl = null;
-        this.iconPreviewEl = null;
-        this.modal = null;
-        this.options.onClose?.();
+        void this.finalizeClose();
       },
     });
     this.modal.open();
   };
 
   close = (): void => {
-    if (this.autoSaveTimer !== null) {
-      window.clearTimeout(this.autoSaveTimer);
-      this.autoSaveTimer = null;
-    }
     this.modal?.close();
   };
 
@@ -102,95 +93,197 @@ export class ActionEditorModal {
       return;
     }
 
+    const previousScrollTop = this.contentEl.scrollTop;
+    this.targetSuggester?.close();
+    this.targetSuggester = null;
     this.contentEl.empty();
+    this.nameInputEl = null;
+    this.iconPreviewEl = null;
 
-    const nameControlEl = this.createFormRow(this.contentEl, "名称");
-    this.nameInputEl = nameControlEl.createEl("input", {
-      cls: "about-blank-action-editor-input about-blank-action-editor-name-input",
-      attr: { type: "text", placeholder: "快捷方式名称" },
-    });
-    this.nameInputEl.value = this.draft.name;
-    this.nameInputEl.addEventListener("input", () => {
-      this.draft.name = this.nameInputEl?.value ?? "";
-      this.scheduleCommit();
-    });
-
-    const metaRowEl = this.contentEl.createDiv({ cls: "about-blank-action-editor-compact-row" });
-    this.createIconField(metaRowEl);
-    this.createTypeField(metaRowEl);
-
-    const valueControlEl = this.createFormRow(this.contentEl, this.getValueLabel());
-    this.valueInputEl = valueControlEl.createEl("input", {
-      cls: "about-blank-action-editor-input about-blank-action-editor-value-input",
-      attr: { type: "text", placeholder: this.getValuePlaceholder() },
-    });
-    this.valueInputEl.value = this.getCurrentValue();
-    this.valueInputEl.classList.toggle("about-blank-action-editor-picker-input", this.draft.content.kind !== ACTION_KINDS.url);
-    this.valueInputEl.addEventListener("input", () => {
-      this.setCurrentValue(this.valueInputEl?.value ?? "");
-      this.scheduleCommit();
-    });
-    this.valueInputEl.addEventListener("click", () => {
-      if (this.draft.content.kind !== ACTION_KINDS.url) {
-        void this.openValuePicker();
-      }
-    });
+    this.renderNameSetting(this.contentEl);
+    this.renderIconSetting(this.contentEl);
+    this.renderTypeSetting(this.contentEl);
+    this.renderTargetSetting(this.contentEl);
+    this.restoreScrollPosition(previousScrollTop);
   };
 
-  private createFormRow(parentEl: HTMLElement, label: string): HTMLElement {
-    const rowEl = parentEl.createDiv({ cls: "about-blank-action-editor-form-row" });
-    rowEl.createDiv({ cls: "about-blank-action-editor-label", text: label });
-    return rowEl.createDiv({ cls: "about-blank-action-editor-control" });
+  private restoreScrollPosition(scrollTop: number): void {
+    const contentEl = this.contentEl;
+    if (!contentEl) {
+      return;
+    }
+    contentEl.scrollTop = scrollTop;
+    contentEl.win.requestAnimationFrame(() => {
+      if (contentEl.isConnected) {
+        contentEl.scrollTop = scrollTop;
+      }
+    });
   }
 
-  private createIconField(parentEl: HTMLElement): void {
-    parentEl.createDiv({ cls: "about-blank-action-editor-label", text: "图标" });
-    const fieldEl = parentEl.createDiv({ cls: "about-blank-action-editor-icon-field" });
-    const iconButton = fieldEl.createEl("button", {
-      cls: "about-blank-icon-picker-button about-blank-action-editor-icon-trigger",
+  private renderNameSetting(parentEl: HTMLElement): void {
+    new Setting(parentEl)
+      .setName("名称")
+      .setDesc("设置快捷方式显示的名称")
+      .addText((text) => {
+        this.nameInputEl = text.inputEl;
+        text
+          .setPlaceholder("快捷方式名称")
+          .setValue(this.draft.name)
+          .onChange((value) => {
+            this.draft.name = value;
+            this.scheduleCommit();
+          });
+      });
+  }
+
+  private renderIconSetting(parentEl: HTMLElement): void {
+    const setting = new Setting(parentEl)
+      .setName("图标")
+      .setDesc("设置快捷方式显示的图标");
+    const iconButton = setting.controlEl.createEl("button", {
+      cls: ["clickable-icon", "about-blank-action-editor-icon-picker"],
       attr: { type: "button", "aria-label": "选择图标" },
     });
-
-    this.iconPreviewEl = iconButton.createDiv({ cls: "about-blank-icon-picker-preview" });
+    this.iconPreviewEl = iconButton.createSpan({
+      cls: "about-blank-action-editor-icon-preview",
+    });
+    setTooltip(iconButton, "选择图标");
     this.updateIconPreview();
-
     iconButton.addEventListener("click", () => {
       void this.openIconPicker(iconButton);
     });
   }
 
-  private createTypeField(parentEl: HTMLElement): void {
-    parentEl.createDiv({ cls: "about-blank-action-editor-label", text: "类型" });
-    this.typeSelectEl = parentEl.createEl("select", { cls: "about-blank-action-editor-select" });
-    this.typeSelectEl.addClass("dropdown");
-    this.typeSelectEl.addClass("about-blank-action-editor-native-select");
-    this.typeSelectEl.createEl("option", { value: ACTION_KINDS.command, text: "命令" });
-    this.typeSelectEl.createEl("option", { value: ACTION_KINDS.file, text: "文件" });
-    this.typeSelectEl.createEl("option", { value: ACTION_KINDS.url, text: "网页" });
-    this.typeSelectEl.value = this.draft.content.kind;
-    this.typeSelectEl.addEventListener("change", () => {
-      const nextKind = this.typeSelectEl?.value as typeof ACTION_KINDS.command | typeof ACTION_KINDS.file | typeof ACTION_KINDS.url;
-      if (nextKind === ACTION_KINDS.command) {
-        this.draft.content = {
-          kind: ACTION_KINDS.command,
-          commandName: "",
-          commandId: "",
-        };
-      } else if (nextKind === ACTION_KINDS.file) {
-        this.draft.content = {
-          kind: ACTION_KINDS.file,
-          fileName: "",
-          filePath: "",
-        };
-      } else {
-        this.draft.content = {
-          kind: ACTION_KINDS.url,
-          url: "",
-        };
-      }
-      this.render();
-      void this.commitChanges();
-    });
+  private renderTypeSetting(parentEl: HTMLElement): void {
+    new Setting(parentEl)
+      .setName("类型")
+      .setDesc("设置快捷方式执行的操作类型")
+      .addDropdown((dropdown) => dropdown
+        .addOption(ACTION_KINDS.command, "命令")
+        .addOption(ACTION_KINDS.file, "文件")
+        .addOption(ACTION_KINDS.url, "网址")
+        .setValue(this.draft.content.kind)
+        .onChange((value) => {
+          this.setContentKind(value);
+          this.render();
+          void this.commitChanges();
+        }));
+  }
+
+  private renderTargetSetting(parentEl: HTMLElement): void {
+    const config = this.getTargetSettingConfig();
+    new Setting(parentEl)
+      .setName(config.name)
+      .setDesc(config.description)
+      .addText((text) => {
+        text
+          .setPlaceholder(config.placeholder)
+          .setValue(this.getTargetDisplayValue());
+        if (this.draft.content.kind === ACTION_KINDS.command) {
+          const content = this.draft.content;
+          text
+            .setPlaceholder("输入命令名称")
+            .onChange((value) => {
+              const currentName = this.getCommandDisplayName();
+              if (value !== currentName) {
+                content.commandId = "";
+                content.commandName = value;
+              }
+              this.scheduleCommit();
+            });
+          this.targetSuggester = new CommandInputSuggester(
+            this.app,
+            text.inputEl,
+            (command) => {
+              if (this.draft.content.kind !== ACTION_KINDS.command) {
+                return;
+              }
+              content.commandId = command.id;
+              content.commandName = command.name;
+              text.setValue(command.name);
+              void this.commitChanges();
+            },
+          );
+          return;
+        }
+        if (this.draft.content.kind === ACTION_KINDS.file) {
+          const content = this.draft.content;
+          text.onChange((value) => {
+            content.filePath = value;
+            content.fileName = this.getFileName(value);
+            this.scheduleCommit();
+          });
+          this.targetSuggester = new FileInputSuggester(
+            this.app,
+            text.inputEl,
+            (file) => {
+              if (this.draft.content.kind !== ACTION_KINDS.file) {
+                return;
+              }
+              content.filePath = file.path;
+              content.fileName = file.name;
+              text.setValue(file.path);
+              void this.commitChanges();
+            },
+          );
+          return;
+        }
+        text.onChange((value) => {
+          if (this.draft.content.kind === ACTION_KINDS.url) {
+            this.draft.content.url = value;
+            this.scheduleCommit();
+          }
+        });
+      });
+  }
+
+  private setContentKind(value: string): void {
+    if (value === ACTION_KINDS.file) {
+      this.draft.content = {
+        kind: ACTION_KINDS.file,
+        fileName: "",
+        filePath: "",
+      };
+      return;
+    }
+    if (value === ACTION_KINDS.url) {
+      this.draft.content = {
+        kind: ACTION_KINDS.url,
+        url: "",
+      };
+      return;
+    }
+    this.draft.content = {
+      kind: ACTION_KINDS.command,
+      commandName: "",
+      commandId: "",
+    };
+  }
+
+  private getTargetSettingConfig(): {
+    name: string;
+    description: string;
+    placeholder: string;
+  } {
+    if (this.draft.content.kind === ACTION_KINDS.command) {
+      return {
+        name: "命令",
+        description: "选择快捷方式执行的 Obsidian 命令",
+        placeholder: "输入命令名称",
+      };
+    }
+    if (this.draft.content.kind === ACTION_KINDS.file) {
+      return {
+        name: "文件",
+        description: "选择快捷方式打开的库内文件",
+        placeholder: "选择或输入文件路径",
+      };
+    }
+    return {
+      name: "链接",
+      description: "设置快捷方式打开的网址或本地 HTML 文件",
+      placeholder: "https://example.com 或 D:\\...\\index.html",
+    };
   }
 
   private async openIconPicker(sourceEl: HTMLElement): Promise<void> {
@@ -252,96 +345,27 @@ export class ActionEditorModal {
     this.updateIconPreview();
   };
 
-  private getValueLabel(): string {
-    if (this.draft.content.kind === ACTION_KINDS.command) {
-      return "命令";
-    }
-    if (this.draft.content.kind === ACTION_KINDS.file) {
-      return "文件";
-    }
-    return "网址";
-  }
-
-  private getValuePlaceholder(): string {
-    if (this.draft.content.kind === ACTION_KINDS.command) {
-      return "命令 ID";
-    }
-    if (this.draft.content.kind === ACTION_KINDS.file) {
-      return "文件路径";
-    }
-    return "https://example.com 或 D:\\...\\index.html";
-  }
-
-  private getCurrentValue(): string {
+  private getTargetDisplayValue(): string {
     return this.draft.content.kind === ACTION_KINDS.command
-      ? this.draft.content.commandId
+      ? this.getCommandDisplayName()
       : this.draft.content.kind === ACTION_KINDS.file
         ? this.draft.content.filePath
         : this.draft.content.url;
   }
 
-  private setCurrentValue(value: string): void {
-    if (this.draft.content.kind === ACTION_KINDS.command) {
-      this.draft.content.commandId = value;
-      if (!value.trim()) {
-        this.draft.content.commandName = "";
-      }
-      return;
+  private getCommandDisplayName(): string {
+    if (this.draft.content.kind !== ACTION_KINDS.command) {
+      return "";
     }
-
-    if (this.draft.content.kind === ACTION_KINDS.file) {
-      this.draft.content.filePath = value;
-      this.draft.content.fileName = value;
-      return;
-    }
-
-    this.draft.content.url = value;
+    const { commandId, commandName } = this.draft.content;
+    const command = getRegisteredCommands(this.app)
+      .find((item) => item.id === commandId);
+    return command?.name ?? commandName;
   }
 
-  private async openValuePicker(): Promise<void> {
-    if (this.draft.content.kind === ACTION_KINDS.command) {
-      const rawCommands = (this.app as UnsafeApp).commands.commands;
-      const commands: Command[] = Array.isArray(rawCommands)
-        ? rawCommands
-        : Object.values(rawCommands ?? {});
-      const commandList = commands.map((command) => ({
-        name: command.name,
-        value: command.id,
-      }));
-
-      const selected = await new StringSuggesterAsync(this.app, commandList, "选择命令...").openAndRespond();
-      if (selected.aborted || this.draft.content.kind !== ACTION_KINDS.command) {
-        return;
-      }
-
-      this.draft.content.commandId = selected.result.value;
-      this.draft.content.commandName = commands.find((command) => command.id === selected.result.value)?.name || "";
-      if (this.valueInputEl) {
-        this.valueInputEl.value = selected.result.value;
-      }
-      await this.commitChanges();
-      return;
-    }
-
-    if (this.draft.content.kind === ACTION_KINDS.url) {
-      return;
-    }
-
-    const files = this.app.vault.getFiles().map((file) => ({
-      name: file.path,
-      value: file.path,
-    }));
-    const selected = await new StringSuggesterAsync(this.app, files, "选择文件...").openAndRespond();
-    if (selected.aborted || this.draft.content.kind !== ACTION_KINDS.file) {
-      return;
-    }
-
-    this.draft.content.filePath = selected.result.value;
-    this.draft.content.fileName = selected.result.value;
-    if (this.valueInputEl) {
-      this.valueInputEl.value = selected.result.value;
-    }
-    await this.commitChanges();
+  private getFileName(filePath: string): string {
+    const normalizedPath = filePath.replace(/\\/g, "/");
+    return normalizedPath.split("/").pop() ?? normalizedPath;
   }
 
   private async commitChanges(): Promise<void> {
@@ -351,9 +375,6 @@ export class ActionEditorModal {
     }
 
     this.draft.name = this.nameInputEl?.value ?? this.draft.name;
-    if (this.valueInputEl) {
-      this.setCurrentValue(this.valueInputEl.value);
-    }
 
     const nextAction = structuredClone(this.draft);
     const nextState = JSON.stringify(nextAction);
@@ -370,6 +391,21 @@ export class ActionEditorModal {
       }
     });
     await this.saveChain;
+  }
+
+  private async finalizeClose(): Promise<void> {
+    if (this.autoSaveTimer !== null) {
+      window.clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+    await this.commitChanges();
+    this.targetSuggester?.close();
+    this.targetSuggester = null;
+    this.contentEl = null;
+    this.nameInputEl = null;
+    this.iconPreviewEl = null;
+    this.modal = null;
+    this.options.onClose?.(structuredClone(this.draft));
   }
 
   private scheduleCommit(): void {

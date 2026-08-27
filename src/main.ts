@@ -1,6 +1,5 @@
 import {
   TFile,
-  Modal,
   Notice,
   Plugin,
   setIcon,
@@ -37,10 +36,11 @@ import isPlainObject from "src/utils/isPlainObject";
 
 import {
   findFirstCustomStatCondition,
+  getCustomStatFieldValue,
   matchesCustomStatDefinition,
   normalizeCustomStatDefinitions,
   toCustomStatFilterGroup,
-} from "src/utils/customStatFilters";
+} from "src/utils/customStatQuery";
 
 import {
   type DateStatDefinition,
@@ -204,6 +204,17 @@ export default class AboutBlank extends Plugin {
       this.registerEvent(
         this.app.vault.on("create", this.invalidateVaultDerivedCaches),
       );
+      this.registerEvent(
+        this.app.vault.on("modify", (file) => {
+          if (
+            this.settings.heatmapDataSource === "file.mtime"
+            && file instanceof TFile
+            && file.extension === "md"
+          ) {
+            this.invalidateHeatmapDerivedCaches();
+          }
+        }),
+      );
       editStyles.rewriteCssVars.iconTextGap.set(adjustInt(this.settings.iconTextGap));
       if (this.settings.centerActionListVertically) {
         editStyles.rewriteCssVars.emptyStateContainerMaxHeight.centered();
@@ -230,12 +241,9 @@ export default class AboutBlank extends Plugin {
         this.app.metadataCache.on('resolved', () => {
           if (
             this.settings.heatmapEnabled
-            && this.settings.heatmapDataSource === "frontmatter"
+            && this.settings.heatmapDataSource.startsWith("note.")
           ) {
-            this.heatmapDataCache = null;
-            this.heatmapYearCache = {};
-            this.heatmapFilesByDateCache = null;
-            this.heatmapFileIndexSignature = "";
+            this.invalidateHeatmapDerivedCaches();
             if (this.getOpenNewTabContexts().length > 0) {
               this.generateHeatmapData();
             } else {
@@ -325,10 +333,7 @@ export default class AboutBlank extends Plugin {
     this.syncEmptyStateDisplayMode();
     await this.saveData(this.settings);
     // 清除热力图缓存, 确保下次渲染使用最新数据
-    this.heatmapDataCache = null;
-    this.heatmapYearCache = {};
-    this.heatmapFilesByDateCache = null;
-    this.heatmapFileIndexSignature = "";
+    this.invalidateHeatmapDerivedCaches();
     this.applyLogoSettings();
     this.applyHeatmapSettings();
     this.applyStatsSettings();
@@ -404,6 +409,28 @@ export default class AboutBlank extends Plugin {
       loadedSettingsRecord.newTabLayout,
       loadedSettingsRecord,
     );
+    const legacySettings = loadedSettings;
+    const loadedHeatmapSource = legacySettings.heatmapDataSource;
+    const legacyFrontmatterField = legacySettings.heatmapFrontmatterField;
+    if (loadedHeatmapSource === "fileCreation") {
+      sanitizedSettings.heatmapDataSource = "file.ctime";
+    } else if (loadedHeatmapSource === "frontmatter") {
+      const field = typeof legacyFrontmatterField === "string"
+        ? legacyFrontmatterField.trim()
+        : "created";
+      sanitizedSettings.heatmapDataSource = `note.${field || "created"}`;
+    } else if (
+      typeof loadedHeatmapSource === "string"
+      && (
+        loadedHeatmapSource === "file.ctime"
+        || loadedHeatmapSource === "file.mtime"
+        || loadedHeatmapSource.startsWith("note.")
+      )
+    ) {
+      sanitizedSettings.heatmapDataSource = loadedHeatmapSource;
+    } else {
+      sanitizedSettings.heatmapDataSource = defaults.heatmapDataSource;
+    }
     sanitizedSettings.logoEnabled = true;
     sanitizedSettings.showStats = true;
     sanitizedSettings.searchBoxEnabled = true;
@@ -902,21 +929,23 @@ export default class AboutBlank extends Plugin {
 
   private invalidateVaultDerivedCaches = (): void => {
     this.statsCache = null;
+    this.invalidateHeatmapDerivedCaches();
+  };
+
+  private invalidateHeatmapDerivedCaches = (): void => {
+    this.heatmapDataCache = null;
     this.heatmapFilesByDateCache = null;
     this.heatmapFileIndexSignature = "";
     this.heatmapYearCache = {};
   };
 
   private getHeatmapDateForFile = (file: TFile): Date | null => {
-    if (this.settings.heatmapDataSource === "fileCreation") {
-      return new Date(file.stat.ctime);
-    }
-    if (this.settings.heatmapDataSource !== "frontmatter") {
-      return null;
-    }
     const cache = this.app.metadataCache.getFileCache(file);
     return this.parseFrontmatterDate(
-      cache?.frontmatter?.[this.settings.heatmapFrontmatterField],
+      getCustomStatFieldValue(
+        { file, cache },
+        this.settings.heatmapDataSource,
+      ),
     );
   };
 
@@ -932,10 +961,7 @@ export default class AboutBlank extends Plugin {
   };
 
   private getHeatmapFilesByDate = (): Map<string, TFile[]> => {
-    const signature = [
-      this.settings.heatmapDataSource,
-      this.settings.heatmapFrontmatterField,
-    ].join('\u0000');
+    const signature = this.settings.heatmapDataSource;
     if (
       this.heatmapFilesByDateCache
       && this.heatmapFileIndexSignature === signature
@@ -3364,6 +3390,14 @@ export default class AboutBlank extends Plugin {
     logoEl.style.backgroundImage = 'var(--about-blank-logo-image)';
   };
 
+  private getLocalLogoResourceUrl = (filePath: string): string => {
+    const normalizedPath = filePath.replace(/\\/g, "/");
+    const encodedPath = encodeURI(normalizedPath)
+      .replace(/#/g, "%23")
+      .replace(/\?/g, "%3F");
+    return `app://local/${encodedPath}`;
+  };
+
   applyLogoSettings = (): void => {
     try {
       const root = document.documentElement;
@@ -3379,6 +3413,9 @@ export default class AboutBlank extends Plugin {
         } else if (this.settings.logoPath.startsWith('data:image')) {
           // data URI 不需要预加载
           logoUrl = `url("${this.settings.logoPath}")`;
+        } else if (this.settings.logoPath.startsWith('app://')) {
+          rawImageUrl = this.settings.logoPath;
+          logoUrl = `url("${rawImageUrl}")`;
         } else {
           // Handle Obsidian relative paths
           try {
@@ -3390,12 +3427,12 @@ export default class AboutBlank extends Plugin {
               logoUrl = `url("${resourcePath}")`;
             } else {
               // Fallback for relative paths
-              rawImageUrl = `app://local/${this.settings.logoPath}`;
+              rawImageUrl = this.getLocalLogoResourceUrl(this.settings.logoPath);
               logoUrl = `url("${rawImageUrl}")`;
             }
           } catch {
             // Fallback for relative paths
-            rawImageUrl = `app://local/${this.settings.logoPath}`;
+            rawImageUrl = this.getLocalLogoResourceUrl(this.settings.logoPath);
             logoUrl = `url("${rawImageUrl}")`;
           }
         }
@@ -3459,132 +3496,5 @@ export default class AboutBlank extends Plugin {
       loggerOnError(error, "应用Logo设置失败\n(About Blank)");
     }
   };
-
-  async showFileSelectionDialog(): Promise<string | null> {
-    try {
-      // 开始文件选择
-      const files = this.app.vault.getFiles();
-      
-      let imageFiles = files.filter((file: TFile) => 
-        file.extension && ['jpg', 'jpeg', 'png', 'gif', 'svg', 'bmp', 'webp'].includes(file.extension)
-      );
-      
-      if (this.settings.logoDirectory && this.settings.logoDirectory.trim()) {
-        const logoDir = this.settings.logoDirectory.trim();
-        imageFiles = imageFiles.filter((file: TFile) => 
-          file.path.startsWith(logoDir) && (file.path === logoDir || file.path.substring(logoDir.length).startsWith('/'))
-        );
-      }
-      
-      // 筛选图片文件数量
-      
-      if (imageFiles.length === 0) {
-        const dirMsg = this.settings.logoDirectory ? `在目录 "${this.settings.logoDirectory}" 中` : "";
-        new Notice(`未找到图片文件${dirMsg}`, 3000);
-        return null;
-      }
-      
-      // 创建一个图片预览选择器
-      const modal = new Modal(this.app);
-      modal.modalEl.addClass('about-blank-image-modal');
-      modal.contentEl.createEl('h3', { text: '选择Logo图片' });
-      
-      // 添加搜索框
-      const searchContainer = modal.contentEl.createEl('div', { cls: 'about-blank-search-container' });
-      const searchInput = searchContainer.createEl('input', { 
-        type: 'text',
-        placeholder: '搜索文件名...',
-        cls: 'about-blank-search-input'
-      });
-      
-      const gridEl = modal.contentEl.createEl('div', { cls: 'about-blank-image-grid' });
-      
-      let selectedPath: string | null = null;
-      
-      // 存储所有图片元素用于搜索
-      const allImageItems: HTMLElement[] = [];
-      
-      // 创建图片预览网格
-      for (const file of imageFiles) {
-        // 添加图片预览
-        
-        const itemEl = gridEl.createEl('div', { cls: 'about-blank-image-item' });
-        
-        // 存储文件信息用于搜索
-        itemEl.dataset.filePath = file.path;
-        itemEl.dataset.fileName = file.name.toLowerCase();
-        
-        // 创建图片预览
-        const imgEl = itemEl.createEl('img', { cls: 'about-blank-image-preview' });
-        
-        // 获取图片URL
-        const resourcePath = this.app.vault.getResourcePath(file);
-        imgEl.src = resourcePath;
-        
-        // 添加文件名
-        const nameEl = itemEl.createEl('div', { cls: 'about-blank-image-name' });
-        nameEl.textContent = file.name;
-        
-        // 添加点击事件
-        itemEl.addEventListener('click', () => {
-          // 选择图片
-          
-          // 移除之前的选中状态
-          gridEl.querySelectorAll('.about-blank-image-item.selected').forEach(el => {
-            el.classList.remove('selected');
-          });
-          
-          // 添加选中状态
-          itemEl.classList.add('selected');
-          selectedPath = file.path;
-          
-          // 延迟关闭模态框, 让用户看到选中效果
-          setTimeout(() => {
-            modal.close();
-          }, 200);
-        });
-        
-        // 处理图片加载错误
-        imgEl.addEventListener('error', () => {
-          imgEl.hide();
-          itemEl.createEl('div', { 
-            cls: 'about-blank-image-preview about-blank-image-placeholder',
-            text: '📄'
-          });
-        });
-        
-        allImageItems.push(itemEl);
-      }
-      
-      // 添加搜索功能
-      searchInput.addEventListener('input', (e) => {
-        const searchTerm = (e.target as HTMLInputElement).value.toLowerCase();
-        
-        allImageItems.forEach(item => {
-          const fileName = item.dataset.fileName ?? '';
-          const shouldShow = !searchTerm || fileName.includes(searchTerm);
-          item.style.display = shouldShow ? 'flex' : 'none';
-        });
-      });
-      
-      // 聚焦搜索框
-      setTimeout(() => {
-        searchInput.focus();
-      }, 100);
-      
-      // 打开模态框
-      return new Promise((resolve) => {
-        modal.onClose = () => {
-          // 模态框关闭, 保存选择的路径
-          resolve(selectedPath);
-        };
-        modal.open();
-      });
-    } catch (error) {
-      loggerOnError(error, "文件选择失败\n(About Blank)");
-      new Notice("文件选择失败", 3000);
-      return null;
-    }
-  }
 
 }

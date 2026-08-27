@@ -1,10 +1,10 @@
 {
-  "id": "albus-custom-about-blank",
-  "name": "Custom About Blank",
-  "version": "3.5.1",
-  "minAppVersion": "1.11.4",
-  "description": "A plugin that lets you fully customize the new tab page with logo, stats, heatmap, search, and shortcut actions.",
-  "author": "Ai-Jani & Albus",
-  "authorUrl": "https://github.com/AlbusGuo",
-  "isDesktopOnly": true
+	"id": "albus-custom-about-blank",
+	"name": "Custom About Blank",
+	"version": "3.6.0",
+	"minAppVersion": "1.11.4",
+	"description": "A plugin that lets you fully customize the new tab page with logo, stats, heatmap, search, and shortcut actions.",
+	"author": "Ai-Jani & Albus",
+	"authorUrl": "https://github.com/AlbusGuo",
+	"isDesktopOnly": true
 }

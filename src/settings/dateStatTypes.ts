@@ -37,6 +37,29 @@ export const isDateStatDefinition = (value: unknown): value is DateStatDefinitio
     && typeof value.date === "string";
 };
 
+export const isDateStatComplete = (stat: DateStatDefinition): boolean => {
+  if (!stat.title.trim()) {
+    return false;
+  }
+  const match = stat.type === DATE_STAT_TYPES.anniversary
+    ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(stat.date.trim())
+    : /^(?:\d{4}-)?(\d{2})-(\d{2})$/.exec(stat.date.trim());
+  if (!match) {
+    return false;
+  }
+  const parts = stat.date.trim().split("-").map(Number);
+  const month = parts.length === 3 ? parts[1] : parts[0];
+  const day = parts.length === 3 ? parts[2] : parts[1];
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const year = parts.length === 3 ? parts[0] : 2000;
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year
+    && date.getMonth() === month - 1
+    && date.getDate() === day;
+};
+
 // =============================================================================
 //                           日期统计算法
 // =============================================================================
