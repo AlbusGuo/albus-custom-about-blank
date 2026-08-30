@@ -61,6 +61,10 @@ export class CustomIconsIntegration {
     return { handled: true, icon: selection?.icon ?? null };
   }
 
+  isAvailable(): boolean {
+    return !this.destroyed && this.getCurrentApi() !== null;
+  }
+
   renderIcon(element: HTMLElement, iconId: string): boolean {
     if (this.destroyed) {
       return false;

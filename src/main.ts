@@ -71,6 +71,8 @@ import { FileListModal } from "src/ui/fileListModal";
 
 import { PointerSortController } from "src/ui/pointerSort";
 
+import { PixelWordmarkEngine } from "src/ui/pixelWordmarkEngine";
+
 import {
   CustomIconsIntegration,
 } from "src/integrations/customIconsIntegration";
@@ -147,6 +149,10 @@ export default class AboutBlank extends Plugin {
   private globalRenderHeatmap: (() => void) | null = null;
   private globalRenderStatsImmediate: (() => void) | null = null;
   private logoImageReady = false;
+  private logoImageSourceUrl = DEFAULT_LOGO_SVG;
+  private pixelWordmarkEngines = new Map<HTMLElement, PixelWordmarkEngine>();
+  private pixelWordmarkFrames = new Map<HTMLElement, number>();
+  private pixelWordmarkSignatures = new WeakMap<HTMLElement, string>();
 
   // 初始化状态: backBurner 完成后设为 true
   private pluginReady = false;
@@ -178,11 +184,14 @@ export default class AboutBlank extends Plugin {
         () => {
           if (this.pluginReady) {
             this.refreshRenderedActionIcons();
+            if (this.settings.logoIcon) {
+              this.applyLogoSettings();
+            }
           }
           this.settingTab?.refreshIntegratedIconPreviews();
         },
       );
-      this.syncCustomIcons();
+      await this.syncCustomIcons();
       this.syncEmptyStateDisplayMode();
       this.app.workspace.onLayoutReady(this.backBurner);
 
@@ -194,6 +203,14 @@ export default class AboutBlank extends Plugin {
       );
       this.registerEvent(
         this.app.workspace.on("file-open", this.addButtonsEventHandler),
+      );
+      this.registerEvent(
+        this.app.workspace.on("css-change", () => {
+          this.getOpenNewTabContexts().forEach(({ container }) => {
+            this.destroyPixelWordmark(container);
+            this.ensurePixelWordmark(container);
+          });
+        }),
       );
       this.registerEvent(
         this.app.vault.on("delete", () => {
@@ -288,6 +305,10 @@ export default class AboutBlank extends Plugin {
     this.newTabLayoutActionElements.clear();
     this.statSortControllers.forEach((controller) => controller.destroy());
     this.statSortControllers.clear();
+    this.pixelWordmarkFrames.forEach((frame) => window.cancelAnimationFrame(frame));
+    this.pixelWordmarkFrames.clear();
+    this.pixelWordmarkEngines.forEach((engine) => engine.destroy());
+    this.pixelWordmarkEngines.clear();
     this.localHtmlBridge.close();
     this.customIconsIntegration?.destroy();
     this.settingTab = null;
@@ -337,7 +358,7 @@ export default class AboutBlank extends Plugin {
     this.applyLogoSettings();
     this.applyHeatmapSettings();
     this.applyStatsSettings();
-    this.syncCustomIcons();
+    void this.syncCustomIcons();
   };
 
   // 保存设置但不刷新页面
@@ -345,22 +366,24 @@ export default class AboutBlank extends Plugin {
     this.settings = this.sanitizeSettingsShape(this.settings);
     this.syncEmptyStateDisplayMode();
     await this.saveData(this.settings);
-    this.syncCustomIcons();
+    void this.syncCustomIcons();
   };
 
-  private syncCustomIcons = (): void => {
+  private syncCustomIcons = (): Promise<void> => {
     if (!this.customIconsIntegration) {
-      return;
+      return Promise.resolve();
     }
     const iconIds = Array.from(new Set(
-      this.settings.actions
-        .map((action) => action.icon.trim())
+      [
+        ...this.settings.actions.map((action) => action.icon.trim()),
+        this.settings.logoIcon.trim(),
+      ]
         .filter((iconId) => (
           iconId.length > 0
           && (iconId.startsWith("CI-") || !iconId.includes(":"))
         )),
     )).sort();
-    void this.customIconsIntegration
+    return this.customIconsIntegration
       .syncRequiredIcons(iconIds)
       .catch((error) => {
         loggerOnError(error, "同步 Custom Icons 图标需求失败\n(About Blank)");
@@ -476,11 +499,111 @@ export default class AboutBlank extends Plugin {
     );
   };
 
-  private getStatsHost = (container: HTMLElement): HTMLElement | null => {
-    return this.getComponentShell(
-      container,
-      this.settings.newTabLayout.preset === "isometric" ? "heatmap" : "hero",
+  private ensureBrandHost = (container: HTMLElement): HTMLElement | null => {
+    const logoHost = this.getLogoHost(container);
+    if (!logoHost) {
+      return null;
+    }
+    let brandEl = logoHost.querySelector<HTMLElement>(
+      ':scope > .about-blank-brand',
     );
+    if (!brandEl) {
+      brandEl = logoHost.createDiv({ cls: 'about-blank-brand' });
+    }
+    let titleEl = brandEl.querySelector<HTMLElement>(
+      ':scope > .about-blank-wordmark-title',
+    );
+    if (!titleEl) {
+      titleEl = brandEl.createDiv({ cls: 'about-blank-wordmark-title' });
+    }
+    titleEl.setText(this.settings.wordmarkText);
+    titleEl.toggleAttribute('hidden', !this.settings.wordmarkText.trim());
+    return brandEl;
+  };
+
+  private destroyPixelWordmark = (container: HTMLElement): void => {
+    const frame = this.pixelWordmarkFrames.get(container);
+    if (frame !== undefined) {
+      (container.ownerDocument.defaultView ?? window).cancelAnimationFrame(frame);
+      this.pixelWordmarkFrames.delete(container);
+    }
+    this.pixelWordmarkEngines.get(container)?.destroy();
+    this.pixelWordmarkEngines.delete(container);
+    this.pixelWordmarkSignatures.delete(container);
+  };
+
+  private ensurePixelWordmark = (container: HTMLElement): void => {
+    const view = container.ownerDocument.defaultView ?? window;
+    if (
+      this.settings.newTabLayout.preset !== "classic"
+      || view.matchMedia("(prefers-reduced-motion: reduce)").matches
+      || view.matchMedia("(hover: none)").matches
+    ) {
+      this.destroyPixelWordmark(container);
+      return;
+    }
+    const brandEl = this.ensureBrandHost(container);
+    if (!brandEl) {
+      this.destroyPixelWordmark(container);
+      return;
+    }
+    const signature = [
+      this.settings.logoPath,
+      this.settings.logoSize,
+      this.settings.wordmarkText,
+      container.ownerDocument.body.classList.contains("theme-dark") ? "dark" : "light",
+    ].join("\u0000");
+    if (
+      this.pixelWordmarkSignatures.get(container) === signature
+      && (
+        this.pixelWordmarkEngines.has(container)
+        || this.pixelWordmarkFrames.has(container)
+      )
+    ) {
+      return;
+    }
+    this.destroyPixelWordmark(container);
+    this.pixelWordmarkSignatures.set(container, signature);
+    const frame = view.requestAnimationFrame(() => {
+      this.pixelWordmarkFrames.delete(container);
+      if (
+        !container.isConnected
+        || this.pixelWordmarkSignatures.get(container) !== signature
+      ) {
+        return;
+      }
+      const engine = new PixelWordmarkEngine(brandEl);
+      this.pixelWordmarkEngines.set(container, engine);
+      void engine.build()
+        .then((active) => {
+          if (
+            !active
+            || this.pixelWordmarkSignatures.get(container) !== signature
+          ) {
+            engine.destroy();
+            if (this.pixelWordmarkEngines.get(container) === engine) {
+              this.pixelWordmarkEngines.delete(container);
+              this.pixelWordmarkSignatures.delete(container);
+            }
+          }
+        })
+        .catch((error: unknown) => {
+          engine.destroy();
+          if (this.pixelWordmarkEngines.get(container) === engine) {
+            this.pixelWordmarkEngines.delete(container);
+            this.pixelWordmarkSignatures.delete(container);
+          }
+          loggerOnError(error, "构建像素 Logo 失败\n(About Blank)");
+        });
+    });
+    this.pixelWordmarkFrames.set(container, frame);
+  };
+
+  private getStatsHost = (container: HTMLElement): HTMLElement | null => {
+    if (this.settings.newTabLayout.preset === "isometric") {
+      return this.getComponentShell(container, "heatmap");
+    }
+    return container.querySelector('.about-blank-component-stack');
   };
 
   private syncComponentStackStructure = (
@@ -531,7 +654,7 @@ export default class AboutBlank extends Plugin {
 
     const searchEl = this.getComponentShell(container, "search");
     const heatmapEl = this.getComponentShell(container, "heatmap");
-    const logoHost = this.getLogoHost(container);
+    const logoHost = this.ensureBrandHost(container);
     const statsHost = this.getStatsHost(container);
     if (logoHost) {
       container.querySelectorAll('.about-blank-logo')
@@ -583,7 +706,7 @@ export default class AboutBlank extends Plugin {
 
     const actionEl = emptyView.addAction(
       "layout-template",
-      "在套系 A/B 间切换",
+      "切换新标签页样式",
       () => {
         void this.toggleLayoutPreset();
       },
@@ -687,8 +810,11 @@ export default class AboutBlank extends Plugin {
         if (preset === "isometric") {
           heights.set(componentId, { min: 0, preferred: 0 });
         } else {
-          const preferred = Math.min(360, Math.max(200, this.settings.logoSize + 16));
-          heights.set(componentId, { min: 160, preferred });
+          const preferred = Math.min(
+            300,
+            Math.max(190, Math.min(150, this.settings.logoSize) + 84),
+          );
+          heights.set(componentId, { min: 170, preferred });
         }
         return;
       }
@@ -775,6 +901,20 @@ export default class AboutBlank extends Plugin {
       }
       componentEl.style.setProperty('--about-blank-component-height', `${height}px`);
     });
+    const classicStatsEl = preset === "classic"
+      ? stackEl.querySelector<HTMLElement>(
+        ':scope > .about-blank-stats-bubbles',
+      )
+      : null;
+    if (classicStatsEl) {
+      this.destroyStatSortControllersIn(classicStatsEl);
+      classicStatsEl.remove();
+      (container.ownerDocument.defaultView ?? window).requestAnimationFrame(() => {
+        if (container.isConnected) {
+          this.globalRenderStatsImmediate?.();
+        }
+      });
+    }
   };
 
   private getOpenNewTabContexts = (): Array<{
@@ -835,6 +975,10 @@ export default class AboutBlank extends Plugin {
     const actionListEl = emptyView.actionListEl;
     if (!actionListEl) {
       return;
+    }
+
+    if (container) {
+      this.destroyPixelWordmark(container);
     }
 
     const componentStack = container?.querySelector('.about-blank-component-stack');
@@ -910,6 +1054,20 @@ export default class AboutBlank extends Plugin {
       if (!rootEl.isConnected) {
         controller.destroy();
         this.statSortControllers.delete(rootEl);
+      }
+    });
+    this.pixelWordmarkEngines.forEach((engine, container) => {
+      if (!container.isConnected) {
+        engine.destroy();
+        this.pixelWordmarkEngines.delete(container);
+        this.pixelWordmarkSignatures.delete(container);
+      }
+    });
+    this.pixelWordmarkFrames.forEach((frame, container) => {
+      if (!container.isConnected) {
+        window.cancelAnimationFrame(frame);
+        this.pixelWordmarkFrames.delete(container);
+        this.pixelWordmarkSignatures.delete(container);
       }
     });
   };
@@ -2020,7 +2178,8 @@ export default class AboutBlank extends Plugin {
             - Number(right.getAttribute("data-stat-order"));
         });
     };
-    if (rootEl.querySelectorAll(itemSelector).length < 2) {
+    const sortableItems = rootEl.querySelectorAll(itemSelector);
+    if (sortableItems.length < 2) {
       return;
     }
 
@@ -2200,15 +2359,8 @@ export default class AboutBlank extends Plugin {
         return;
       }
 
-      const logoEl = statsHost.querySelector('.about-blank-logo');
       const heroHeight = Math.max(statsHost.clientHeight, 160);
-      const heroRect = statsHost.getBoundingClientRect();
-      const logoRect = logoEl instanceof HTMLElement && logoEl.offsetHeight > 0
-        ? logoEl.getBoundingClientRect()
-        : null;
-      const logoCenterY = logoRect
-        ? (logoRect.top - heroRect.top) + (logoRect.height / 2)
-        : heroHeight / 2;
+      const logoCenterY = heroHeight / 2;
       const statsContainer = statsHost.createEl('div', {
         cls: [
           'about-blank-stats-bubbles',
@@ -2224,8 +2376,8 @@ export default class AboutBlank extends Plugin {
       }>();
       (["file", "date"] as const).forEach((family) => {
         const items = familyStats[family];
-        const estimatedBubbleHeight = family === "file" ? 38 : 42;
-        const rowGap = family === "file" ? 8 : 10;
+        const estimatedBubbleHeight = family === "file" ? 34 : 38;
+        const rowGap = 14;
         const rowPitch = estimatedBubbleHeight + rowGap;
         const availableHeight = Math.max(
           estimatedBubbleHeight,
@@ -2286,7 +2438,7 @@ export default class AboutBlank extends Plugin {
         bubble.setAttribute('data-row', rowIndex.toString());
         bubble.style.setProperty(
           '--about-blank-stat-column-offset',
-          `${columnIndex * 134}px`,
+          `${columnIndex * 126}px`,
         );
         bubble.setAttribute('data-stat-id', stat.id);
         bubble.setAttribute('data-stat-family', this.getStatFamily(stat));
@@ -3356,7 +3508,7 @@ export default class AboutBlank extends Plugin {
   private applyLogoClassToContainer = (actionListEl: HTMLElement): void => {
     const container = actionListEl.closest('.empty-state-container');
     if (!(container instanceof HTMLElement)) return;
-    const logoHost = this.getLogoHost(container);
+    const logoHost = this.ensureBrandHost(container);
     if (!logoHost) return;
     const logoEl = logoHost.querySelector<HTMLElement>('.about-blank-logo');
     const shouldShowLogo = this.settings.logoEnabled && this.logoImageReady;
@@ -3368,6 +3520,7 @@ export default class AboutBlank extends Plugin {
 
     if (!shouldShowLogo) {
       logoEl?.remove();
+      this.destroyPixelWordmark(container);
       return;
     }
 
@@ -3377,9 +3530,30 @@ export default class AboutBlank extends Plugin {
     if (logoHost.firstElementChild !== nextLogoEl) {
       logoHost.insertBefore(nextLogoEl, logoHost.firstChild);
     }
+    this.ensurePixelWordmark(container);
   };
 
   private syncLogoElementStyle = (logoEl: HTMLElement): void => {
+    logoEl.empty();
+    logoEl.removeClass('about-blank-logo-custom-icon');
+    logoEl.style.backgroundColor = 'transparent';
+    logoEl.style.backgroundImage = 'none';
+    if (
+      this.settings.logoIcon
+      && this.customIconsIntegration.renderIcon(
+        logoEl,
+        this.settings.logoIcon,
+      )
+    ) {
+      logoEl.addClass('about-blank-logo-custom-icon');
+      delete logoEl.dataset.aboutBlankParticleSource;
+      logoEl.dataset.aboutBlankParticleMask = "false";
+      return;
+    }
+    logoEl.dataset.aboutBlankParticleSource = this.logoImageSourceUrl;
+    logoEl.dataset.aboutBlankParticleMask = String(
+      this.settings.newTabLayout.preset === "classic",
+    );
     if (this.settings.newTabLayout.preset === "classic") {
       logoEl.style.backgroundColor = 'var(--icon-color)';
       logoEl.style.backgroundImage = 'none';
@@ -3405,16 +3579,20 @@ export default class AboutBlank extends Plugin {
       // Set logo image
       let logoUrl: string;
       let rawImageUrl: string | null = null; // 用于预加载的原始图片URL
+      let particleImageUrl = DEFAULT_LOGO_SVG;
       if (this.settings.logoEnabled && this.settings.logoPath) {
         // Convert file path to URL format
         if (this.settings.logoPath.startsWith('http')) {
           rawImageUrl = this.settings.logoPath;
+          particleImageUrl = this.settings.logoPath;
           logoUrl = `url("${this.settings.logoPath}")`;
         } else if (this.settings.logoPath.startsWith('data:image')) {
           // data URI 不需要预加载
+          particleImageUrl = this.settings.logoPath;
           logoUrl = `url("${this.settings.logoPath}")`;
         } else if (this.settings.logoPath.startsWith('app://')) {
           rawImageUrl = this.settings.logoPath;
+          particleImageUrl = this.settings.logoPath;
           logoUrl = `url("${rawImageUrl}")`;
         } else {
           // Handle Obsidian relative paths
@@ -3424,15 +3602,18 @@ export default class AboutBlank extends Plugin {
               // 使用Obsidian的资源路径API
               const resourcePath = this.app.vault.getResourcePath(file as TFile);
               rawImageUrl = resourcePath;
+              particleImageUrl = resourcePath;
               logoUrl = `url("${resourcePath}")`;
             } else {
               // Fallback for relative paths
               rawImageUrl = this.getLocalLogoResourceUrl(this.settings.logoPath);
+              particleImageUrl = rawImageUrl;
               logoUrl = `url("${rawImageUrl}")`;
             }
           } catch {
             // Fallback for relative paths
             rawImageUrl = this.getLocalLogoResourceUrl(this.settings.logoPath);
+            particleImageUrl = rawImageUrl;
             logoUrl = `url("${rawImageUrl}")`;
           }
         }
@@ -3444,6 +3625,11 @@ export default class AboutBlank extends Plugin {
       } else {
         root.style.setProperty('--about-blank-logo-image', 'none');
       }
+      this.logoImageSourceUrl = particleImageUrl;
+      const customLogoPreferred = Boolean(
+        this.settings.logoIcon
+        && this.customIconsIntegration.isAvailable(),
+      );
       
       const logoSize = `${this.settings.logoSize}px`;
       root.style.setProperty('--about-blank-logo-size', logoSize);
@@ -3453,9 +3639,10 @@ export default class AboutBlank extends Plugin {
       const applyLogoClasses = () => {
         this.logoImageReady = true;
         this.getOpenNewTabContexts().forEach(({ container }) => {
+          this.destroyPixelWordmark(container);
           container.classList.remove('logo-top', 'logo-mask', 'logo-original');
           container.querySelectorAll('.about-blank-logo').forEach((el) => el.remove());
-          const logoHost = this.getLogoHost(container);
+          const logoHost = this.ensureBrandHost(container);
           if (this.settings.logoEnabled && logoHost) {
             container.classList.add('logo-top');
             container.classList.add(
@@ -3467,6 +3654,7 @@ export default class AboutBlank extends Plugin {
             logoEl.className = 'about-blank-logo';
             this.syncLogoElementStyle(logoEl);
             logoHost.insertBefore(logoEl, logoHost.firstChild);
+            this.ensurePixelWordmark(container);
           }
         });
 
@@ -3475,6 +3663,7 @@ export default class AboutBlank extends Plugin {
       if (
         this.settings.logoEnabled
         && rawImageUrl
+        && !customLogoPreferred
         && this.getOpenNewTabContexts().length > 0
       ) {
         // 需要预加载的外部/本地图片: 图片就绪前不显示 Logo

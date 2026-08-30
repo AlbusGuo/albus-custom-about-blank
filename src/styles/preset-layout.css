@@ -139,7 +139,7 @@
   transform: scale(0.992);
 }
 
-/* Suite A: large isometric activity surface. */
+/* Isometric layout: large activity surface. */
 .about-blank-layout-isometric .about-blank-component-stack {
   justify-content: safe center;
   padding-block: 0;
@@ -168,18 +168,27 @@
 }
 
 .about-blank-layout-isometric .about-blank-component-search {
-  --about-blank-search-brand-width: clamp(88px, 9vw, 112px);
+  --about-blank-search-brand-width: clamp(72px, 7vw, 84px);
   --about-blank-logo-render-size: 54px;
   flex-direction: row;
-  gap: 18px;
+  gap: 10px;
   width: min(calc(100% - 24px), 940px);
   padding-inline: 0;
+}
+
+.about-blank-layout-isometric .about-blank-component-search .about-blank-brand {
+  display: flex;
+  flex: 0 0 var(--about-blank-search-brand-width);
+  flex-direction: column;
+  gap: 2px;
+  width: var(--about-blank-search-brand-width);
+  min-width: var(--about-blank-search-brand-width);
 }
 
 .about-blank-layout-isometric .about-blank-component-search .about-blank-logo {
   position: relative;
   z-index: 1;
-  flex: 0 0 var(--about-blank-search-brand-width);
+  flex: 0 0 54px;
   width: var(--about-blank-search-brand-width);
   height: 54px;
   min-width: var(--about-blank-search-brand-width);
@@ -191,11 +200,23 @@
   );
 }
 
+.about-blank-layout-isometric
+  .about-blank-component-search
+  .about-blank-wordmark-title {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
 .theme-dark
   .workspace-leaf-content[data-type="empty"]
   .empty-state-container.logo-original.about-blank-layout-isometric
   .about-blank-component-search
-  .about-blank-logo {
+  .about-blank-logo:not(.about-blank-logo-custom-icon) {
   filter: invert(1)
     drop-shadow(
       0 8px 12px color-mix(in srgb, var(--text-normal) 16%, transparent)
@@ -224,7 +245,7 @@
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  max-width: calc(100% - var(--about-blank-search-brand-width) - 18px);
+  max-width: calc(100% - var(--about-blank-search-brand-width) - 10px);
   margin: 0;
 }
 
@@ -396,9 +417,34 @@
   opacity: 0.5;
 }
 
-/* Suite B: preserve the familiar Logo-led composition. */
+/* Classic layout: Logo-led composition. */
 .about-blank-layout-classic .about-blank-component-hero {
+  --about-blank-logo-render-size: min(
+    var(--about-blank-logo-size, 120px),
+    clamp(88px, 18vh, 150px),
+    calc(var(--about-blank-component-height, 360px) - 72px)
+  );
   width: min(100%, 1100px);
+  pointer-events: none;
+}
+
+.about-blank-layout-classic .about-blank-component-hero .about-blank-brand {
+  flex-direction: row;
+  gap: clamp(14px, 2.4vw, 28px);
+  max-width: min(980px, calc(100% - 48px));
+  pointer-events: auto;
+}
+
+.about-blank-layout-classic
+  .about-blank-component-hero
+  .about-blank-wordmark-title {
+  max-width: min(700px, 62vw);
+  overflow: visible;
+  font-size: var(--about-blank-logo-render-size);
+  font-weight: 720;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-overflow: clip;
 }
 
 .workspace-leaf-content[data-type="empty"]
@@ -429,7 +475,7 @@
   .about-blank-layout-isometric .about-blank-component-search {
     --about-blank-search-brand-width: 76px;
     width: calc(100% - 16px);
-    gap: 12px;
+    gap: 8px;
   }
 
   .about-blank-layout-isometric .about-blank-component-search .about-blank-logo {
@@ -440,14 +486,14 @@
   .about-blank-layout-isometric
     .about-blank-component-search
     .about-blank-embedded-search {
-    max-width: calc(100% - var(--about-blank-search-brand-width) - 12px);
+    max-width: calc(100% - var(--about-blank-search-brand-width) - 8px);
   }
 }
 
 @media (max-width: 480px) {
   .about-blank-layout-isometric .about-blank-component-search {
     --about-blank-search-brand-width: 44px;
-    gap: 10px;
+    gap: 8px;
   }
 
   .about-blank-layout-isometric .about-blank-component-search .about-blank-logo {
@@ -455,10 +501,22 @@
     min-height: 44px;
   }
 
+  .about-blank-layout-classic .about-blank-component-hero .about-blank-brand {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .about-blank-layout-classic
+  .about-blank-component-hero
+  .about-blank-wordmark-title {
+    max-width: calc(100vw - 48px);
+    text-align: center;
+  }
+
   .about-blank-layout-isometric
     .about-blank-component-search
     .about-blank-embedded-search {
-    max-width: calc(100% - var(--about-blank-search-brand-width) - 10px);
+    max-width: calc(100% - var(--about-blank-search-brand-width) - 8px);
   }
 }
 

@@ -46,6 +46,24 @@
   background-image: var(--about-blank-logo-image);
 }
 
+.workspace-leaf-content[data-type="empty"]
+  .empty-state-container
+  .about-blank-logo.about-blank-logo-custom-icon {
+  background-color: transparent;
+  background-image: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.workspace-leaf-content[data-type="empty"]
+  .empty-state-container
+  .about-blank-logo.about-blank-logo-custom-icon
+  svg {
+  width: 100%;
+  height: 100%;
+  color: var(--icon-color);
+}
+
 
 .workspace-leaf-content[data-type="empty"] .empty-state-container.logo-top .about-blank-logo {
   margin-bottom: 8px;
@@ -61,4 +79,31 @@
   gap: 8px;
   padding-left: 0;
   width: 100%;
+}
+
+.about-blank-brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.about-blank-wordmark-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-blank-pixel-wordmark-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+  image-rendering: pixelated;
 }

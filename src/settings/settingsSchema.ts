@@ -28,6 +28,8 @@ export interface AboutBlankSettings {
   shortcutListEnabled: boolean;
   logoEnabled: boolean;
   logoPath: string;
+  logoIcon: string;
+  wordmarkText: string;
   logoSize: number;
   searchBoxEnabled: boolean;
   showStats: boolean;
@@ -55,6 +57,8 @@ const DEFAULT_SETTINGS: AboutBlankSettings = {
   shortcutListEnabled: true,
   logoEnabled: true,
   logoPath: "",
+  logoIcon: "",
+  wordmarkText: "",
   logoSize: 350,
   searchBoxEnabled: true,
   showStats: true,
@@ -131,6 +135,8 @@ export const settingsPropTypeCheck: {
   shortcutListEnabled: (value: unknown) => isBool(value),
   logoEnabled: (value: unknown) => isBool(value),
   logoPath: (value: unknown) => typeof value === "string",
+  logoIcon: (value: unknown) => typeof value === "string",
+  wordmarkText: (value: unknown) => typeof value === "string",
   logoSize: (value: unknown) => typeof value === "number" && Number.isFinite(value),
   heatmapEnabled: (value: unknown) => isBool(value),
   heatmapStyle: (value: unknown) => value === "flat" || value === "isometric",

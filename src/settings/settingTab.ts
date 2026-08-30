@@ -92,6 +92,8 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private actionEditorRefreshPending = false;
   private actionRowElements = new Map<number, HTMLElement>();
   private readonly settingsOptionPickers = new Set<OptionPicker>();
+  private wordmarkSaveTimer: number | null = null;
+  private logoPickerPreviewEl: HTMLElement | null = null;
 
   constructor(app: App, plugin: AboutBlank) {
     super(app, plugin);
@@ -177,6 +179,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     this.actionRowElements.clear();
     this.customStatRowElements.clear();
     this.dateStatRowElements.clear();
+    this.logoPickerPreviewEl = null;
 
     if (this.plugin.settings.settingsTab === "shortcuts") {
       this.makeSettingsShortcuts(contentEl);
@@ -290,9 +293,12 @@ export class AboutBlankSettingTab extends PluginSettingTab {
     const logoGroup = new SettingGroup(containerEl);
 
     logoGroup.addSetting((logoPathSetting) => {
+      const customIconsAvailable = this.plugin.customIconsIntegration.isAvailable();
       logoPathSetting
-        .setName("Logo 图片")
-        .setDesc("使用系统文件选择器选择 Logo 图片");
+        .setName(customIconsAvailable ? "Logo 图标" : "Logo 图片")
+        .setDesc(customIconsAvailable
+          ? "使用 Custom Icons 选择 Logo"
+          : "使用系统文件选择器选择 Logo 图片");
       const fileInputEl = logoPathSetting.controlEl.createEl("input", {
         cls: "about-blank-logo-file-input",
         attr: {
@@ -312,19 +318,47 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           "aria-label": "选择 Logo 图片",
         },
       });
-      setTooltip(pickerEl, "选择 Logo 图片");
-      pickerEl.createSpan({
-        cls: [
-          "about-blank-action-editor-icon-preview",
-          "about-blank-logo-file-preview",
-        ],
+      setTooltip(pickerEl, customIconsAvailable ? "选择 Logo 图标" : "选择 Logo 图片");
+      this.logoPickerPreviewEl = pickerEl.createSpan({
+        cls: customIconsAvailable
+          ? ["about-blank-action-editor-icon-preview"]
+          : [
+            "about-blank-action-editor-icon-preview",
+            "about-blank-logo-file-preview",
+          ],
         attr: { "aria-hidden": "true" },
       });
+      this.renderLogoPickerPreview();
       fileInputEl.addEventListener("click", () => {
         fileInputEl.value = "";
       });
       pickerEl.addEventListener("click", () => {
-        fileInputEl.click();
+        if (!customIconsAvailable) {
+          fileInputEl.click();
+          return;
+        }
+        void (async () => {
+          try {
+            const result = await this.plugin.customIconsIntegration.openIconPicker(
+              pickerEl,
+              this.plugin.settings.logoIcon,
+            );
+            if (!result.handled) {
+              fileInputEl.click();
+              return;
+            }
+            if (result.icon === null) {
+              return;
+            }
+            this.plugin.settings.logoIcon = result.icon;
+            await this.plugin.saveSettings();
+            this.plugin.refreshAllNewTabs();
+            this.renderLogoPickerPreview();
+          } catch (error) {
+            loggerOnError(error, "打开 Custom Icons Logo 选择器失败\n(About Blank)");
+            new Notice("Logo 图标选择失败", 3000);
+          }
+        })();
       });
       fileInputEl.addEventListener("change", () => {
         const file = fileInputEl.files?.item(0);
@@ -334,6 +368,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
         void (async () => {
           try {
             this.plugin.settings.logoPath = await this.getLogoFileSource(file);
+            this.plugin.settings.logoIcon = "";
             await this.plugin.saveSettings();
             this.plugin.refreshAllNewTabs();
             new Notice(`已选择 Logo 图片: ${file.name}`, 3000);
@@ -345,7 +380,57 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       });
     });
 
+    logoGroup.addSetting((wordmarkSetting) => {
+      wordmarkSetting
+        .setName("标题文本")
+        .setDesc("设置新标签页 Logo 旁或下方显示的文本")
+        .addText((text) => text
+          .setPlaceholder("输入新标签页标题")
+          .setValue(this.plugin.settings.wordmarkText)
+          .onChange((value) => {
+            this.plugin.settings.wordmarkText = value;
+            this.scheduleWordmarkSave();
+          }));
+    });
+
   };
+
+  private renderLogoPickerPreview(): void {
+    const previewEl = this.logoPickerPreviewEl;
+    if (!previewEl) {
+      return;
+    }
+    previewEl.empty();
+    if (
+      this.plugin.settings.logoIcon
+      && this.plugin.customIconsIntegration.renderIcon(
+        previewEl,
+        this.plugin.settings.logoIcon,
+      )
+    ) {
+      return;
+    }
+    if (this.plugin.customIconsIntegration.isAvailable()) {
+      setIcon(previewEl, "shapes");
+    }
+  }
+
+  private scheduleWordmarkSave(): void {
+    if (this.wordmarkSaveTimer !== null) {
+      window.clearTimeout(this.wordmarkSaveTimer);
+    }
+    this.wordmarkSaveTimer = window.setTimeout(() => {
+      this.wordmarkSaveTimer = null;
+      void (async () => {
+        try {
+          await this.plugin.saveSettingsSilent();
+          this.plugin.refreshAllNewTabs();
+        } catch (error) {
+          loggerOnError(error, "保存标题文本失败\n(About Blank)");
+        }
+      })();
+    }, 220);
+  }
 
   private getLogoFileSource(file: File): Promise<string> {
     const localPath = (file as File & { path?: unknown }).path;
@@ -1143,6 +1228,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       this.updateActionRow(index);
     });
     this.actionEditorModal?.refreshIconPreview();
+    this.renderLogoPickerPreview();
   };
 
   private makeSettingSortable = (
