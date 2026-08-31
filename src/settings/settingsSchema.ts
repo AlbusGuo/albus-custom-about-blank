@@ -30,6 +30,15 @@ export interface AboutBlankSettings {
   logoPath: string;
   logoIcon: string;
   wordmarkText: string;
+  particleEffectEnabled: boolean;
+  particleUseCustomColor: boolean;
+  particleColor: string;
+  particleAmbientMotion: ParticleAmbientMotion;
+  particleScale: number;
+  particleSpacing: number;
+  particleDotSize: number;
+  particleDisturbRadius: number;
+  particleDisturbStrength: number;
   logoSize: number;
   searchBoxEnabled: boolean;
   showStats: boolean;
@@ -49,6 +58,15 @@ export interface AboutBlankSettings {
   settingsTab: string;
 }
 
+export type ParticleAmbientMotion =
+  | "none"
+  | "wave"
+  | "float"
+  | "undulate"
+  | "pulse"
+  | "ripple"
+  | "breathe";
+
 const DEFAULT_SETTINGS: AboutBlankSettings = {
   newTabLayout: createNewTabLayout(),
   iconTextGap: 10,
@@ -59,6 +77,15 @@ const DEFAULT_SETTINGS: AboutBlankSettings = {
   logoPath: "",
   logoIcon: "",
   wordmarkText: "",
+  particleEffectEnabled: true,
+  particleUseCustomColor: false,
+  particleColor: "#6c31e3",
+  particleAmbientMotion: "none",
+  particleScale: 1,
+  particleSpacing: 3.6,
+  particleDotSize: 0.8,
+  particleDisturbRadius: 72,
+  particleDisturbStrength: 1.45,
   logoSize: 350,
   searchBoxEnabled: true,
   showStats: true,
@@ -137,6 +164,29 @@ export const settingsPropTypeCheck: {
   logoPath: (value: unknown) => typeof value === "string",
   logoIcon: (value: unknown) => typeof value === "string",
   wordmarkText: (value: unknown) => typeof value === "string",
+  particleEffectEnabled: (value: unknown) => isBool(value),
+  particleUseCustomColor: (value: unknown) => isBool(value),
+  particleColor: (value: unknown) => typeof value === "string",
+  particleAmbientMotion: (value: unknown) => (
+    typeof value === "string"
+    && ["none", "wave", "float", "undulate", "pulse", "ripple", "breathe"]
+      .includes(value)
+  ),
+  particleScale: (value: unknown) => (
+    typeof value === "number" && Number.isFinite(value) && value >= 0.8 && value <= 1.6
+  ),
+  particleSpacing: (value: unknown) => (
+    typeof value === "number" && Number.isFinite(value) && value >= 1 && value <= 8
+  ),
+  particleDotSize: (value: unknown) => (
+    typeof value === "number" && Number.isFinite(value) && value >= 0.2 && value <= 3
+  ),
+  particleDisturbRadius: (value: unknown) => (
+    typeof value === "number" && Number.isFinite(value) && value >= 10 && value <= 150
+  ),
+  particleDisturbStrength: (value: unknown) => (
+    typeof value === "number" && Number.isFinite(value) && value >= 0.1 && value <= 3
+  ),
   logoSize: (value: unknown) => typeof value === "number" && Number.isFinite(value),
   heatmapEnabled: (value: unknown) => isBool(value),
   heatmapStyle: (value: unknown) => value === "flat" || value === "isometric",

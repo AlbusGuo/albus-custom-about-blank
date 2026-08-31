@@ -93,6 +93,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
   private actionRowElements = new Map<number, HTMLElement>();
   private readonly settingsOptionPickers = new Set<OptionPicker>();
   private wordmarkSaveTimer: number | null = null;
+  private particleSettingsTimer: number | null = null;
   private logoPickerPreviewEl: HTMLElement | null = null;
 
   constructor(app: App, plugin: AboutBlank) {
@@ -393,7 +394,163 @@ export class AboutBlankSettingTab extends PluginSettingTab {
           }));
     });
 
+    new Setting(containerEl)
+      .setName("粒子效果")
+      .setHeading();
+
+    const particleGroup = new SettingGroup(containerEl);
+    particleGroup.addSetting((enabledSetting) => {
+      enabledSetting
+        .setName("启用粒子效果")
+        .setDesc("将 2D 新标签页的 Logo 与标题渲染为交互式粒子点阵")
+        .addToggle((toggle) => toggle
+          .setValue(this.plugin.settings.particleEffectEnabled)
+          .onChange((value) => {
+            this.plugin.settings.particleEffectEnabled = value;
+            this.scheduleParticleSettingsApply();
+            this.renderCurrentTab();
+          }));
+    });
+
+    if (this.plugin.settings.particleEffectEnabled) {
+      particleGroup.addSetting((motionSetting) => {
+        motionSetting
+          .setName("默认动画")
+          .setDesc("设置粒子静止时持续播放的动画")
+          .addDropdown((dropdown) => dropdown
+            .addOption("none", "无")
+            .addOption("wave", "波浪节奏")
+            .addOption("float", "整体浮动")
+            .addOption("undulate", "错落浮动")
+            .addOption("pulse", "心跳")
+            .addOption("ripple", "涟漪")
+            .addOption("breathe", "呼吸")
+            .setValue(this.plugin.settings.particleAmbientMotion)
+            .onChange((value) => {
+              this.plugin.settings.particleAmbientMotion = value as typeof this.plugin.settings.particleAmbientMotion;
+              this.scheduleParticleSettingsApply();
+            }));
+      });
+
+      particleGroup.addSetting((customColorSetting) => {
+        customColorSetting
+          .setName("自定义粒子颜色")
+          .setDesc("关闭时使用当前 Obsidian 主题文字颜色")
+          .addToggle((toggle) => toggle
+            .setValue(this.plugin.settings.particleUseCustomColor)
+            .onChange((value) => {
+              this.plugin.settings.particleUseCustomColor = value;
+              this.scheduleParticleSettingsApply();
+              this.renderCurrentTab();
+            }));
+      });
+
+      if (this.plugin.settings.particleUseCustomColor) {
+        particleGroup.addSetting((colorSetting) => {
+          colorSetting
+            .setName("粒子颜色")
+            .setDesc("设置全部粒子使用的统一颜色")
+            .addColorPicker((picker) => picker
+              .setValue(this.plugin.settings.particleColor)
+              .onChange((value) => {
+                this.plugin.settings.particleColor = value;
+                this.scheduleParticleSettingsApply();
+              }));
+        });
+      }
+
+      const addSlider = (
+        name: string,
+        description: string,
+        value: number,
+        min: number,
+        max: number,
+        step: number,
+        onChange: (nextValue: number) => void,
+      ): void => {
+        particleGroup.addSetting((sliderSetting) => {
+          sliderSetting
+            .setName(name)
+            .setDesc(description)
+            .addSlider((slider) => slider
+              .setLimits(min, max, step)
+              .setValue(value)
+              .setInstant(false)
+              .setDynamicTooltip()
+              .onChange((nextValue) => {
+                onChange(nextValue);
+                this.scheduleParticleSettingsApply();
+              }));
+        });
+      };
+
+      addSlider(
+        "粒子缩放",
+        "设置粒子字标相对原始 Logo 与标题的缩放比例",
+        this.plugin.settings.particleScale,
+        0.8,
+        1.6,
+        0.1,
+        (value) => { this.plugin.settings.particleScale = value; },
+      );
+      addSlider(
+        "粒子密度",
+        "设置点阵密度, 数值越大粒子越密集",
+        9 - this.plugin.settings.particleSpacing,
+        1,
+        8,
+        0.2,
+        (value) => {
+          this.plugin.settings.particleSpacing = Math.round((9 - value) * 10) / 10;
+        },
+      );
+      addSlider(
+        "粒子大小",
+        "设置单个粒子的半径",
+        this.plugin.settings.particleDotSize,
+        0.2,
+        3,
+        0.1,
+        (value) => { this.plugin.settings.particleDotSize = value; },
+      );
+      addSlider(
+        "扰动范围",
+        "设置鼠标推开粒子的作用半径",
+        this.plugin.settings.particleDisturbRadius,
+        10,
+        150,
+        1,
+        (value) => { this.plugin.settings.particleDisturbRadius = value; },
+      );
+      addSlider(
+        "扰动力度",
+        "设置鼠标推开粒子的强度",
+        this.plugin.settings.particleDisturbStrength,
+        0.1,
+        3,
+        0.1,
+        (value) => { this.plugin.settings.particleDisturbStrength = value; },
+      );
+    }
+
   };
+
+  private scheduleParticleSettingsApply(): void {
+    if (this.particleSettingsTimer !== null) {
+      window.clearTimeout(this.particleSettingsTimer);
+    }
+    this.particleSettingsTimer = window.setTimeout(() => {
+      this.particleSettingsTimer = null;
+      void (async () => {
+        try {
+          await this.plugin.saveSettingsSilent();
+          this.plugin.refreshPixelWordmarks();
+        } catch (error) {
+          loggerOnError(error, "保存粒子效果设置失败\n(About Blank)");
+        }
+      })();
+    }, 180);
+  }
 
   private renderLogoPickerPreview(): void {
     const previewEl = this.logoPickerPreviewEl;

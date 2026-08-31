@@ -535,7 +535,8 @@ export default class AboutBlank extends Plugin {
   private ensurePixelWordmark = (container: HTMLElement): void => {
     const view = container.ownerDocument.defaultView ?? window;
     if (
-      this.settings.newTabLayout.preset !== "classic"
+      !this.settings.particleEffectEnabled
+      || this.settings.newTabLayout.preset !== "classic"
       || view.matchMedia("(prefers-reduced-motion: reduce)").matches
       || view.matchMedia("(hover: none)").matches
     ) {
@@ -551,6 +552,14 @@ export default class AboutBlank extends Plugin {
       this.settings.logoPath,
       this.settings.logoSize,
       this.settings.wordmarkText,
+      this.settings.particleUseCustomColor,
+      this.settings.particleColor,
+      this.settings.particleAmbientMotion,
+      this.settings.particleScale,
+      this.settings.particleSpacing,
+      this.settings.particleDotSize,
+      this.settings.particleDisturbRadius,
+      this.settings.particleDisturbStrength,
       container.ownerDocument.body.classList.contains("theme-dark") ? "dark" : "light",
     ].join("\u0000");
     if (
@@ -572,7 +581,16 @@ export default class AboutBlank extends Plugin {
       ) {
         return;
       }
-      const engine = new PixelWordmarkEngine(brandEl);
+      const engine = new PixelWordmarkEngine(brandEl, {
+        useCustomColor: this.settings.particleUseCustomColor,
+        color: this.settings.particleColor,
+        ambientMotion: this.settings.particleAmbientMotion,
+        scale: this.settings.particleScale,
+        spacing: this.settings.particleSpacing,
+        dotSize: this.settings.particleDotSize,
+        repulsionRadius: this.settings.particleDisturbRadius,
+        repulsionStrength: this.settings.particleDisturbStrength,
+      });
       this.pixelWordmarkEngines.set(container, engine);
       void engine.build()
         .then((active) => {
@@ -597,6 +615,13 @@ export default class AboutBlank extends Plugin {
         });
     });
     this.pixelWordmarkFrames.set(container, frame);
+  };
+
+  refreshPixelWordmarks = (): void => {
+    this.getOpenNewTabContexts().forEach(({ container }) => {
+      this.destroyPixelWordmark(container);
+      this.ensurePixelWordmark(container);
+    });
   };
 
   private getStatsHost = (container: HTMLElement): HTMLElement | null => {

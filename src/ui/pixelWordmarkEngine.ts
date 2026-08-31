@@ -4,6 +4,21 @@
  * tailored to About Blank's DOM, resource paths, and performance limits.
  */
 
+import type {
+  ParticleAmbientMotion,
+} from "src/settings/settingsSchema";
+
+export interface PixelWordmarkOptions {
+  useCustomColor: boolean;
+  color: string;
+  ambientMotion: ParticleAmbientMotion;
+  scale: number;
+  spacing: number;
+  dotSize: number;
+  repulsionRadius: number;
+  repulsionStrength: number;
+}
+
 interface PixelParticle {
   x: number;
   y: number;
@@ -15,17 +30,36 @@ interface PixelParticle {
   color: string;
 }
 
-const MAX_PARTICLES = 6500;
+const MAX_PARTICLES = 10000;
 const MIN_ALPHA = 24;
-const BASE_SAMPLE_SPACING = 3.6;
 const CANVAS_PADDING = 104;
 const SPRING_STRENGTH = 0.045;
 const VELOCITY_DAMPING = 0.82;
-const REPULSION_RADIUS = 72;
-const REPULSION_STRENGTH = 1.45;
 const RESIZE_DELAY = 180;
+const SIN_LUT_SIZE = 1024;
+const SIN_LUT_SCALE = SIN_LUT_SIZE / (Math.PI * 2);
+const SIN_LUT = (() => {
+  const table = new Float32Array(SIN_LUT_SIZE);
+  for (let index = 0; index < SIN_LUT_SIZE; index += 1) {
+    table[index] = Math.sin((index / SIN_LUT_SIZE) * Math.PI * 2);
+  }
+  return table;
+})();
+
+const lutSin = (phase: number): number => {
+  return SIN_LUT[(phase * SIN_LUT_SCALE) & (SIN_LUT_SIZE - 1)];
+};
+
+const heartbeatShape = (phase: number): number => {
+  const first = lutSin(phase);
+  const second = lutSin(phase - 0.9);
+  const pulse = first > 0 ? first ** 6 : 0;
+  const echo = second > 0 ? second ** 6 : 0;
+  return pulse + (echo * 0.55);
+};
 
 export class PixelWordmarkEngine {
+  private readonly interactionEl: HTMLElement;
   private particles: PixelParticle[] = [];
   private canvasEl: HTMLCanvasElement | null = null;
   private context: CanvasRenderingContext2D | null = null;
@@ -43,7 +77,14 @@ export class PixelWordmarkEngine {
   private previousPosition = "";
   private hiddenElements: Array<{ element: HTMLElement; visibility: string }> = [];
 
-  constructor(private readonly containerEl: HTMLElement) {}
+  constructor(
+    private readonly containerEl: HTMLElement,
+    private readonly options: PixelWordmarkOptions,
+  ) {
+    this.interactionEl = containerEl.closest<HTMLElement>(
+      ".about-blank-component-stack",
+    ) ?? containerEl;
+  }
 
   async build(): Promise<boolean> {
     if (this.destroyed || !this.containerEl.isConnected) {
@@ -59,10 +100,10 @@ export class PixelWordmarkEngine {
       return false;
     }
     this.hideSources();
-    this.containerEl.addEventListener("pointermove", this.handlePointerMove, {
+    this.interactionEl.addEventListener("pointermove", this.handlePointerMove, {
       passive: true,
     });
-    this.containerEl.addEventListener("pointerleave", this.handlePointerLeave);
+    this.interactionEl.addEventListener("pointerleave", this.handlePointerLeave);
     this.containerEl.ownerDocument.addEventListener(
       "visibilitychange",
       this.handleVisibilityChange,
@@ -70,6 +111,9 @@ export class PixelWordmarkEngine {
     this.resizeObserver = new ResizeObserver(this.handleResize);
     this.resizeObserver.observe(this.containerEl);
     this.render();
+    if (this.options.ambientMotion !== "none") {
+      this.ensureFrame();
+    }
     return true;
   }
 
@@ -90,8 +134,8 @@ export class PixelWordmarkEngine {
     }
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.containerEl.removeEventListener("pointermove", this.handlePointerMove);
-    this.containerEl.removeEventListener("pointerleave", this.handlePointerLeave);
+    this.interactionEl.removeEventListener("pointermove", this.handlePointerMove);
+    this.interactionEl.removeEventListener("pointerleave", this.handlePointerLeave);
     this.containerEl.ownerDocument.removeEventListener(
       "visibilitychange",
       this.handleVisibilityChange,
@@ -106,9 +150,23 @@ export class PixelWordmarkEngine {
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
     const rect = this.containerEl.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const horizontalPadding = this.getHorizontalPadding();
+    const verticalPadding = this.getVerticalPadding();
+    const insideParticleSurface = pointerX >= -horizontalPadding
+      && pointerX <= this.width + horizontalPadding
+      && pointerY >= -verticalPadding
+      && pointerY <= this.height + verticalPadding;
+    if (!insideParticleSurface) {
+      if (this.pointerInside) {
+        this.handlePointerLeave();
+      }
+      return;
+    }
     this.pointerInside = true;
-    this.pointerX = event.clientX - rect.left;
-    this.pointerY = event.clientY - rect.top;
+    this.pointerX = pointerX;
+    this.pointerY = pointerY;
     this.ensureFrame();
   };
 
@@ -127,7 +185,7 @@ export class PixelWordmarkEngine {
       }
       return;
     }
-    if (this.pointerInside) {
+    if (this.pointerInside || this.options.ambientMotion !== "none") {
       this.ensureFrame();
     }
   };
@@ -159,6 +217,9 @@ export class PixelWordmarkEngine {
     this.particles = particles;
     this.resizeCanvas();
     this.render();
+    if (this.options.ambientMotion !== "none") {
+      this.ensureFrame();
+    }
   }
 
   private async createParticles(): Promise<PixelParticle[]> {
@@ -320,6 +381,9 @@ export class PixelWordmarkEngine {
   }
 
   private resolveParticleColor(): string {
+    if (this.options.useCustomColor) {
+      return this.options.color;
+    }
     const titleEl = this.containerEl.querySelector<HTMLElement>(
       ".about-blank-wordmark-title:not([hidden])",
     );
@@ -340,7 +404,7 @@ export class PixelWordmarkEngine {
   }
 
   private sampleParticles(imageData: ImageData, color: string): PixelParticle[] {
-    let spacing = BASE_SAMPLE_SPACING * this.scale;
+    let spacing = this.options.spacing * this.scale;
     let particles = this.collectParticles(imageData, spacing, color);
     while (particles.length > MAX_PARTICLES) {
       spacing *= 1.35;
@@ -384,12 +448,13 @@ export class PixelWordmarkEngine {
         if (activePixels === 0 || coverage < 0.025) {
           continue;
         }
-        const homeX = ((weightedX / alphaSum) / this.scale) - CANVAS_PADDING;
-        const homeY = ((weightedY / alphaSum) / this.scale) - CANVAS_PADDING;
-        const radius = Math.min(
-          0.92,
-          Math.max(0.64, (spacing / this.scale) * 0.24),
-        );
+        const sourceX = ((weightedX / alphaSum) / this.scale) - CANVAS_PADDING;
+        const sourceY = ((weightedY / alphaSum) / this.scale) - CANVAS_PADDING;
+        const homeX = (this.width / 2)
+          + ((sourceX - (this.width / 2)) * this.options.scale);
+        const homeY = (this.height / 2)
+          + ((sourceY - (this.height / 2)) * this.options.scale);
+        const radius = this.options.dotSize * this.options.scale;
         particles.push({
           x: homeX,
           y: homeY,
@@ -427,15 +492,25 @@ export class PixelWordmarkEngine {
     if (!this.canvasEl || !this.context) {
       return;
     }
-    const canvasWidth = this.width + (CANVAS_PADDING * 2);
-    const canvasHeight = this.height + (CANVAS_PADDING * 2);
+    const horizontalPadding = this.getHorizontalPadding();
+    const verticalPadding = this.getVerticalPadding();
+    const canvasWidth = this.width + (horizontalPadding * 2);
+    const canvasHeight = this.height + (verticalPadding * 2);
     this.canvasEl.width = Math.ceil(canvasWidth * this.scale);
     this.canvasEl.height = Math.ceil(canvasHeight * this.scale);
-    this.canvasEl.style.left = `${-CANVAS_PADDING}px`;
-    this.canvasEl.style.top = `${-CANVAS_PADDING}px`;
+    this.canvasEl.style.left = `${-horizontalPadding}px`;
+    this.canvasEl.style.top = `${-verticalPadding}px`;
     this.canvasEl.style.width = `${canvasWidth}px`;
     this.canvasEl.style.height = `${canvasHeight}px`;
     this.context.setTransform(this.scale, 0, 0, this.scale, 0, 0);
+  }
+
+  private getHorizontalPadding(): number {
+    return CANVAS_PADDING + (this.width * (this.options.scale - 1) / 2);
+  }
+
+  private getVerticalPadding(): number {
+    return CANVAS_PADDING + (this.height * (this.options.scale - 1) / 2);
   }
 
   private hideSources(): void {
@@ -472,16 +547,19 @@ export class PixelWordmarkEngine {
     if (this.destroyed) {
       return;
     }
+    if (this.containerEl.getClientRects().length === 0) {
+      return;
+    }
     const moving = this.stepParticles();
     this.render();
-    if (this.pointerInside || moving) {
+    if (this.options.ambientMotion !== "none" || this.pointerInside || moving) {
       this.ensureFrame();
     }
   };
 
   private stepParticles(): boolean {
     let moving = false;
-    const radiusSquared = REPULSION_RADIUS * REPULSION_RADIUS;
+    const radiusSquared = this.options.repulsionRadius * this.options.repulsionRadius;
     this.particles.forEach((particle) => {
       if (this.pointerInside) {
         const deltaX = particle.x - this.pointerX;
@@ -489,8 +567,9 @@ export class PixelWordmarkEngine {
         const distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
         if (distanceSquared > 0.001 && distanceSquared < radiusSquared) {
           const distance = Math.sqrt(distanceSquared);
-          const ratio = (REPULSION_RADIUS - distance) / REPULSION_RADIUS;
-          const force = ratio * ratio * REPULSION_STRENGTH;
+          const ratio = (this.options.repulsionRadius - distance)
+            / this.options.repulsionRadius;
+          const force = ratio * ratio * this.options.repulsionStrength;
           particle.velocityX += (deltaX / distance) * force;
           particle.velocityY += (deltaY / distance) * force;
         }
@@ -518,26 +597,206 @@ export class PixelWordmarkEngine {
     if (!context) {
       return;
     }
+    const horizontalPadding = this.getHorizontalPadding();
+    const verticalPadding = this.getVerticalPadding();
     context.clearRect(
       0,
       0,
-      this.width + (CANVAS_PADDING * 2),
-      this.height + (CANVAS_PADDING * 2),
+      this.width + (horizontalPadding * 2),
+      this.height + (verticalPadding * 2),
     );
+    this.renderParticles(
+      context,
+      horizontalPadding,
+      verticalPadding,
+    );
+  }
+
+  private renderParticles(
+    context: CanvasRenderingContext2D,
+    horizontalPadding: number,
+    verticalPadding: number,
+  ): void {
+    const motion = this.options.ambientMotion;
+    if (motion === "none") {
+      this.renderStatic(context, horizontalPadding, verticalPadding);
+      return;
+    }
+    const time = this.getView().performance.now() * 0.001;
+    if (motion === "float") {
+      const offsetY = lutSin(time * 1.4) * 2.4;
+      this.renderWithOffset(
+        context,
+        horizontalPadding,
+        verticalPadding,
+        () => [0, offsetY],
+      );
+      return;
+    }
+    if (motion === "breathe") {
+      this.renderRadialScale(
+        context,
+        horizontalPadding,
+        verticalPadding,
+        1 + (lutSin(time * 1.1) * 0.015),
+      );
+      return;
+    }
+    if (motion === "pulse") {
+      this.renderHeartbeat(context, horizontalPadding, verticalPadding, time);
+      return;
+    }
+    if (motion === "ripple") {
+      this.renderRipple(context, horizontalPadding, verticalPadding, time);
+      return;
+    }
+    if (motion === "undulate") {
+      const clock = lutSin(time * 1.6) * 2;
+      this.renderWithOffset(
+        context,
+        horizontalPadding,
+        verticalPadding,
+        (particle) => [
+          0,
+          clock * lutSin((particle.homeX * 0.026) + (Math.PI / 2)),
+        ],
+      );
+      return;
+    }
+    this.renderWithOffset(
+      context,
+      horizontalPadding,
+      verticalPadding,
+      (particle) => [
+        0,
+        lutSin(
+          (time * 2.4)
+          + ((particle.homeX + particle.homeY) * 0.045),
+        ) * 1.6,
+      ],
+    );
+  }
+
+  private renderStatic(
+    context: CanvasRenderingContext2D,
+    horizontalPadding: number,
+    verticalPadding: number,
+  ): void {
+    this.renderWithOffset(
+      context,
+      horizontalPadding,
+      verticalPadding,
+      () => [0, 0],
+    );
+  }
+
+  private renderWithOffset(
+    context: CanvasRenderingContext2D,
+    horizontalPadding: number,
+    verticalPadding: number,
+    getOffset: (particle: PixelParticle) => [number, number],
+  ): void {
     let currentColor = "";
     this.particles.forEach((particle) => {
       if (particle.color !== currentColor) {
         currentColor = particle.color;
         context.fillStyle = currentColor;
       }
-      const size = particle.radius * 2;
-      context.fillRect(
-        particle.x + CANVAS_PADDING - particle.radius,
-        particle.y + CANVAS_PADDING - particle.radius,
-        size,
-        size,
+      const [offsetX, offsetY] = getOffset(particle);
+      this.drawParticle(
+        context,
+        particle,
+        particle.x + offsetX + horizontalPadding,
+        particle.y + offsetY + verticalPadding,
       );
     });
+  }
+
+  private renderRadialScale(
+    context: CanvasRenderingContext2D,
+    horizontalPadding: number,
+    verticalPadding: number,
+    scale: number,
+  ): void {
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
+    const stretch = scale - 1;
+    this.renderWithOffset(
+      context,
+      horizontalPadding,
+      verticalPadding,
+      (particle) => [
+        (particle.x - centerX) * stretch,
+        (particle.y - centerY) * stretch,
+      ],
+    );
+  }
+
+  private renderHeartbeat(
+    context: CanvasRenderingContext2D,
+    horizontalPadding: number,
+    verticalPadding: number,
+    time: number,
+  ): void {
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
+    const maxDistance = Math.max(centerX, centerY, 1);
+    this.renderWithOffset(
+      context,
+      horizontalPadding,
+      verticalPadding,
+      (particle) => {
+        const deltaX = particle.x - centerX;
+        const deltaY = particle.y - centerY;
+        const distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+        const envelope = 0.004 + ((distance / maxDistance) * 0.014);
+        const stretch = heartbeatShape(
+          (time * 5.2) - (distance * 0.008),
+        ) * envelope;
+        return [deltaX * stretch, deltaY * stretch];
+      },
+    );
+  }
+
+  private renderRipple(
+    context: CanvasRenderingContext2D,
+    horizontalPadding: number,
+    verticalPadding: number,
+    time: number,
+  ): void {
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
+    this.renderWithOffset(
+      context,
+      horizontalPadding,
+      verticalPadding,
+      (particle) => {
+        const deltaX = particle.x - centerX;
+        const deltaY = particle.y - centerY;
+        const distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+        if (distance <= 0.001) {
+          return [0, 0];
+        }
+        const offset = lutSin((time * 3) - (distance * 0.05)) * 1.4;
+        const ratio = offset / distance;
+        return [deltaX * ratio, deltaY * ratio];
+      },
+    );
+  }
+
+  private drawParticle(
+    context: CanvasRenderingContext2D,
+    particle: PixelParticle,
+    x: number,
+    y: number,
+  ): void {
+    const size = particle.radius * 2;
+    context.fillRect(
+      x - particle.radius,
+      y - particle.radius,
+      size,
+      size,
+    );
   }
 
   private getView(): Window {
