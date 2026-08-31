@@ -355,10 +355,10 @@ export default class AboutBlank extends Plugin {
     await this.saveData(this.settings);
     // 清除热力图缓存, 确保下次渲染使用最新数据
     this.invalidateHeatmapDerivedCaches();
+    await this.syncCustomIcons();
     this.applyLogoSettings();
     this.applyHeatmapSettings();
     this.applyStatsSettings();
-    void this.syncCustomIcons();
   };
 
   // 保存设置但不刷新页面
@@ -366,7 +366,7 @@ export default class AboutBlank extends Plugin {
     this.settings = this.sanitizeSettingsShape(this.settings);
     this.syncEmptyStateDisplayMode();
     await this.saveData(this.settings);
-    void this.syncCustomIcons();
+    await this.syncCustomIcons();
   };
 
   private syncCustomIcons = (): Promise<void> => {
@@ -549,6 +549,7 @@ export default class AboutBlank extends Plugin {
       return;
     }
     const signature = [
+      this.settings.logoIcon,
       this.settings.logoPath,
       this.settings.logoSize,
       this.settings.wordmarkText,
@@ -3559,22 +3560,37 @@ export default class AboutBlank extends Plugin {
   };
 
   private syncLogoElementStyle = (logoEl: HTMLElement): void => {
+    if (this.settings.logoIcon && this.customIconsIntegration.isAvailable()) {
+      const stagedIconEl = logoEl.ownerDocument.createElement('div');
+      if (this.customIconsIntegration.renderIcon(
+        stagedIconEl,
+        this.settings.logoIcon,
+      )) {
+        logoEl.empty();
+        while (stagedIconEl.firstChild) {
+          logoEl.appendChild(stagedIconEl.firstChild);
+        }
+        logoEl.addClass('about-blank-logo-custom-icon');
+        logoEl.style.backgroundColor = 'transparent';
+        logoEl.style.backgroundImage = 'none';
+        logoEl.dataset.aboutBlankCustomIcon = this.settings.logoIcon;
+        delete logoEl.dataset.aboutBlankParticleSource;
+        logoEl.dataset.aboutBlankParticleMask = "false";
+        return;
+      }
+      if (
+        logoEl.dataset.aboutBlankCustomIcon === this.settings.logoIcon
+        && logoEl.querySelector('svg')
+      ) {
+        return;
+      }
+    }
+
     logoEl.empty();
     logoEl.removeClass('about-blank-logo-custom-icon');
     logoEl.style.backgroundColor = 'transparent';
     logoEl.style.backgroundImage = 'none';
-    if (
-      this.settings.logoIcon
-      && this.customIconsIntegration.renderIcon(
-        logoEl,
-        this.settings.logoIcon,
-      )
-    ) {
-      logoEl.addClass('about-blank-logo-custom-icon');
-      delete logoEl.dataset.aboutBlankParticleSource;
-      logoEl.dataset.aboutBlankParticleMask = "false";
-      return;
-    }
+    delete logoEl.dataset.aboutBlankCustomIcon;
     logoEl.dataset.aboutBlankParticleSource = this.logoImageSourceUrl;
     logoEl.dataset.aboutBlankParticleMask = String(
       this.settings.newTabLayout.preset === "classic",
