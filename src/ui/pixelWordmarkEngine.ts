@@ -32,6 +32,7 @@ interface PixelParticle {
 
 const MAX_PARTICLES = 10000;
 const MIN_ALPHA = 24;
+const COLOR_QUANTIZATION_STEP = 32;
 const CANVAS_PADDING = 104;
 const SPRING_STRENGTH = 0.045;
 const VELOCITY_DAMPING = 0.82;
@@ -49,6 +50,11 @@ const SIN_LUT = (() => {
 const lutSin = (phase: number): number => {
   return SIN_LUT[(phase * SIN_LUT_SCALE) & (SIN_LUT_SIZE - 1)];
 };
+
+const quantizeColorChannel = (channel: number): number => Math.min(
+  255,
+  Math.round(channel / COLOR_QUANTIZATION_STEP) * COLOR_QUANTIZATION_STEP,
+);
 
 const heartbeatShape = (phase: number): number => {
   const first = lutSin(phase);
@@ -260,7 +266,10 @@ export class PixelWordmarkEngine {
       this.scale = scale;
       this.width = rect.width;
       this.height = rect.height;
-      return this.sampleParticles(imageData, this.resolveParticleColor());
+      return this.sampleParticles(
+        imageData,
+        this.options.useCustomColor ? this.options.color : null,
+      );
     } catch {
       return [];
     }
@@ -294,7 +303,10 @@ export class PixelWordmarkEngine {
     const x = (logoRect.left - containerRect.left) + ((logoRect.width - width) / 2);
     const y = (logoRect.top - containerRect.top) + ((logoRect.height - height) / 2);
     context.drawImage(image, x, y, width, height);
-    if (logoEl.dataset.aboutBlankParticleMask === "true") {
+    if (
+      logoEl.dataset.aboutBlankParticleMask === "true"
+      && !this.imageHasVisibleColor(image)
+    ) {
       const style = this.getView().getComputedStyle(logoEl);
       const tint = style.backgroundColor === "rgba(0, 0, 0, 0)"
         ? style.color
@@ -304,6 +316,37 @@ export class PixelWordmarkEngine {
       context.fillStyle = tint;
       context.fillRect(x, y, width, height);
       context.restore();
+    }
+  }
+
+  private imageHasVisibleColor(image: HTMLImageElement): boolean {
+    const sampleCanvas = this.containerEl.ownerDocument.createElement("canvas");
+    const sampleSize = 32;
+    sampleCanvas.width = sampleSize;
+    sampleCanvas.height = sampleSize;
+    const context = sampleCanvas.getContext("2d");
+    if (!context) {
+      return false;
+    }
+    context.drawImage(image, 0, 0, sampleSize, sampleSize);
+    try {
+      const { data } = context.getImageData(0, 0, sampleSize, sampleSize);
+      let visiblePixels = 0;
+      let coloredPixels = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index + 3] < MIN_ALPHA) {
+          continue;
+        }
+        visiblePixels += 1;
+        const minimum = Math.min(data[index], data[index + 1], data[index + 2]);
+        const maximum = Math.max(data[index], data[index + 1], data[index + 2]);
+        if (maximum - minimum >= 24) {
+          coloredPixels += 1;
+        }
+      }
+      return coloredPixels >= Math.max(2, Math.ceil(visiblePixels * 0.01));
+    } catch {
+      return false;
     }
   }
 
@@ -380,35 +423,15 @@ export class PixelWordmarkEngine {
     );
   }
 
-  private resolveParticleColor(): string {
-    if (this.options.useCustomColor) {
-      return this.options.color;
-    }
-    const titleEl = this.containerEl.querySelector<HTMLElement>(
-      ".about-blank-wordmark-title:not([hidden])",
-    );
-    if (titleEl) {
-      return this.getView().getComputedStyle(titleEl).color;
-    }
-    const logoEl = this.containerEl.querySelector<HTMLElement>(
-      ".about-blank-logo",
-    );
-    if (logoEl) {
-      const style = this.getView().getComputedStyle(logoEl);
-      if (style.backgroundColor !== "rgba(0, 0, 0, 0)") {
-        return style.backgroundColor;
-      }
-      return style.color;
-    }
-    return this.getView().getComputedStyle(this.containerEl).color;
-  }
-
-  private sampleParticles(imageData: ImageData, color: string): PixelParticle[] {
+  private sampleParticles(
+    imageData: ImageData,
+    colorOverride: string | null,
+  ): PixelParticle[] {
     let spacing = this.options.spacing * this.scale;
-    let particles = this.collectParticles(imageData, spacing, color);
+    let particles = this.collectParticles(imageData, spacing, colorOverride);
     while (particles.length > MAX_PARTICLES) {
       spacing *= 1.35;
-      particles = this.collectParticles(imageData, spacing, color);
+      particles = this.collectParticles(imageData, spacing, colorOverride);
     }
     return particles;
   }
@@ -416,9 +439,10 @@ export class PixelWordmarkEngine {
   private collectParticles(
     imageData: ImageData,
     spacing: number,
-    color: string,
+    colorOverride: string | null,
   ): PixelParticle[] {
     const particles: PixelParticle[] = [];
+    const sampledColorCache = new Map<number, string>();
     const { data, width, height } = imageData;
     for (let cellY = 0; cellY < height; cellY += spacing) {
       const startY = Math.floor(cellY);
@@ -429,6 +453,9 @@ export class PixelWordmarkEngine {
         let alphaSum = 0;
         let weightedX = 0;
         let weightedY = 0;
+        let weightedRed = 0;
+        let weightedGreen = 0;
+        let weightedBlue = 0;
         let activePixels = 0;
         for (let y = startY; y < endY; y += 1) {
           for (let x = startX; x < endX; x += 1) {
@@ -440,6 +467,9 @@ export class PixelWordmarkEngine {
             alphaSum += alpha;
             weightedX += x * alpha;
             weightedY += y * alpha;
+            weightedRed += data[index] * alpha;
+            weightedGreen += data[index + 1] * alpha;
+            weightedBlue += data[index + 2] * alpha;
             activePixels += 1;
           }
         }
@@ -455,6 +485,20 @@ export class PixelWordmarkEngine {
         const homeY = (this.height / 2)
           + ((sourceY - (this.height / 2)) * this.options.scale);
         const radius = this.options.dotSize * this.options.scale;
+        let color = colorOverride;
+        if (!color) {
+          const red = quantizeColorChannel(weightedRed / alphaSum);
+          const green = quantizeColorChannel(weightedGreen / alphaSum);
+          const blue = quantizeColorChannel(weightedBlue / alphaSum);
+          const colorKey = (red << 16) | (green << 8) | blue;
+          const cachedColor = sampledColorCache.get(colorKey);
+          if (cachedColor) {
+            color = cachedColor;
+          } else {
+            color = `rgb(${red} ${green} ${blue})`;
+            sampledColorCache.set(colorKey, color);
+          }
+        }
         particles.push({
           x: homeX,
           y: homeY,

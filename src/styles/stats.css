@@ -349,6 +349,14 @@
   );
 }
 
+.about-blank-stats-classic .is-builtin-stat {
+  --about-blank-stat-rail-accent: var(--color-cyan, #3aa6a0);
+}
+
+.about-blank-stats-classic .is-file-stat {
+  --about-blank-stat-rail-accent: var(--color-purple, #8b6ccf);
+}
+
 .about-blank-stats-classic .is-date-family {
   --about-blank-stat-rail-accent: color-mix(
     in srgb,
@@ -391,6 +399,16 @@
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.about-blank-stats-classic
+  :is(.is-builtin-stat, .is-file-stat)
+  .about-blank-stats-bubble-label {
+  color: color-mix(
+    in srgb,
+    var(--about-blank-stat-rail-accent) 72%,
+    var(--text-normal)
+  );
 }
 
 .about-blank-stats-classic .about-blank-stats-bubble-value {

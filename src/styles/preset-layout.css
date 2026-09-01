@@ -267,6 +267,24 @@
   pointer-events: none;
 }
 
+.about-blank-stat-platform.is-builtin-stat {
+  --about-blank-stat-platform-accent: var(--color-cyan, #3aa6a0);
+  --about-blank-stat-platform-color: color-mix(
+    in srgb,
+    var(--about-blank-stat-platform-accent) 30%,
+    var(--background-primary)
+  );
+}
+
+.about-blank-stat-platform.is-file-stat {
+  --about-blank-stat-platform-accent: var(--color-purple, #8b6ccf);
+  --about-blank-stat-platform-color: color-mix(
+    in srgb,
+    var(--about-blank-stat-platform-accent) 32%,
+    var(--background-primary)
+  );
+}
+
 .about-blank-stat-platform.is-date-family {
   --about-blank-stat-platform-accent: var(--color-blue, #5b9bd5);
   --about-blank-stat-platform-color: color-mix(

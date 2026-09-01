@@ -2069,6 +2069,7 @@ export default class AboutBlank extends Plugin {
     return [
       `is-${stat.kind}-stat`,
       `is-${this.getStatFamily(stat)}-family`,
+      stat.kind === "default" ? "is-builtin-stat" : "is-user-stat",
     ];
   };
 
@@ -2504,9 +2505,6 @@ export default class AboutBlank extends Plugin {
     const localWidth = 100;
     const localHeight = 44;
     const familyStats = this.groupOrderedStatsByFamily(orderedStats);
-    const heatmapPlatformColors = this.settings.heatmapColorSegments
-      .filter((segment) => segment.max > 0)
-      .map((segment) => segment.color);
     const familyIndices = {
       file: 0,
       date: 0,
@@ -2610,15 +2608,6 @@ export default class AboutBlank extends Plugin {
           ? 'about-blank-stat-platform-left'
           : 'about-blank-stat-platform-right',
       );
-      const platformColor = heatmapPlatformColors[
-        familyIndex % Math.max(1, heatmapPlatformColors.length)
-      ];
-      if (isFileFamily && platformColor) {
-        platformEl.style.setProperty(
-          '--about-blank-stat-platform-accent',
-          platformColor,
-        );
-      }
       if (stat.dateStatType) {
         platformEl.classList.add(
           'is-date-stat',

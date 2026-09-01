@@ -435,7 +435,7 @@ export class AboutBlankSettingTab extends PluginSettingTab {
       particleGroup.addSetting((customColorSetting) => {
         customColorSetting
           .setName("自定义粒子颜色")
-          .setDesc("关闭时使用当前 Obsidian 主题文字颜色")
+          .setDesc("关闭时保留 Logo 与标题的原始颜色")
           .addToggle((toggle) => toggle
             .setValue(this.plugin.settings.particleUseCustomColor)
             .onChange((value) => {
